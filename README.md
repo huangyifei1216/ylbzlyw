@@ -10,6 +10,11 @@ npm run serve
 
 打开 [http://127.0.0.1:4173/](http://127.0.0.1:4173/)。
 
+## Dev 预览
+
+- 在线预览：[ylbzlyw dev](https://huangyifei1216.github.io/ylbzlyw/)
+- GitHub 源码：[dev 分支](https://github.com/huangyifei1216/ylbzlyw/tree/dev)
+
 完整演示可直接点击开通页的“先看看完整演示”。测试码包括：
 
 - `BB-ALL-0001`：0—18 岁全龄版
