@@ -1,0 +1,11 @@
+{
+  "name": "strategic-parenting-companion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/smoke.mjs",
+    "check": "node tests/smoke.mjs",
+    "serve": "python3 -m http.server 4173"
+  }
+}
