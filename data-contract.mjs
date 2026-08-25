@@ -1,274 +1,164 @@
-/**
- * Versioned persistence boundary for 一两步.
- *
- * This module deliberately has no network or UI concerns. It keeps the local
- * demo compatible while giving a future backend one stable, validated shape.
- */
-
-export const DATA_CONTRACT_VERSION = 1;
+/** Versioned, local-only persistence boundary for 一两步. */
+export const DATA_CONTRACT_VERSION = 2;
+export const PRODUCT_VERSION = 5.1;
 export const STORAGE_KEY = "ylb.v5.state";
 
-const PRODUCT_VERSION = 5;
-const MAX_NICKNAME_LENGTH = 12;
-const MAX_TEXT_LENGTH = 500;
+const STAGES = ["s1", "s2", "s3", "s4", "s5", "s6"];
+const AGREEMENT_STATUSES = ["active", "review-due", "reviewed", "paused", "archived"];
+const WISH_STATUSES = ["active", "scheduled", "completed", "cancelled"];
+const TRANSACTION_TYPES = ["child-step", "parent-step", "companion", "wish-spend", "wish-refund", "record-reversal"];
 
 export function emptyState() {
-  return {
-    schemaVersion: DATA_CONTRACT_VERSION,
-    version: PRODUCT_VERSION,
-    entitlement: null,
-    children: [],
-    currentChildId: "",
-    agreements: [],
-    checkins: {},
-    redemptions: [],
-    petPeaks: {},
-    settings: { handbookUrl: "" },
-    bridgeSeen: false,
-    demo: false,
-  };
+  return { schemaVersion: 2, version: PRODUCT_VERSION, entitlement: null, children: [], currentChildId: "", agreements: [], records: {}, fruitTransactions: [], wishes: [], petPeaks: {}, settings: { handbookUrl: "" }, bridgeSeen: false, demo: false };
 }
 
-/**
- * Accept an exported payload as well as the raw localStorage state. This is a
- * migration boundary, not an import/export feature: only the known data keys
- * are carried forward.
- */
 export function migrateState(input) {
-  const source = asRecord(input);
-  const envelope = asRecord(source.data);
-  const candidate = Object.keys(envelope).length ? envelope : source;
-  return {
-    ...candidate,
-    schemaVersion: DATA_CONTRACT_VERSION,
-    version: PRODUCT_VERSION,
-  };
+  const source = object(input);
+  const candidate = Object.keys(object(source.data)).length ? object(source.data) : source;
+  if (Number(candidate.schemaVersion) >= 2) return { ...candidate, schemaVersion: 2, version: PRODUCT_VERSION };
+  return migrateV1(candidate);
 }
 
 export function normalizeState(input) {
-  const migrated = migrateState(input);
+  const source = migrateState(input);
   const output = emptyState();
-
-  output.entitlement = normalizeEntitlement(migrated.entitlement);
-  output.children = normalizeChildren(migrated.children);
+  output.entitlement = normalizeEntitlement(source.entitlement);
+  output.children = normalizeChildren(source.children);
   const childIds = new Set(output.children.map((child) => child.id));
-  output.currentChildId = childIds.has(String(migrated.currentChildId || ""))
-    ? String(migrated.currentChildId)
-    : (output.children[0]?.id || "");
-
-  output.agreements = normalizeAgreements(migrated.agreements, childIds);
-  const agreementMap = new Map(output.agreements.map((agreement) => [agreement.id, agreement]));
-  output.checkins = normalizeCheckins(migrated.checkins, agreementMap);
-  output.redemptions = normalizeRedemptions(migrated.redemptions, agreementMap);
-  output.petPeaks = normalizePetPeaks(migrated.petPeaks, childIds);
-  output.settings = normalizeSettings(migrated.settings);
-  output.bridgeSeen = Boolean(migrated.bridgeSeen);
-  output.demo = Boolean(migrated.demo);
-
+  output.currentChildId = childIds.has(safeId(source.currentChildId)) ? safeId(source.currentChildId) : (output.children[0]?.id || "");
+  output.agreements = normalizeAgreements(source.agreements, childIds);
+  const agreements = new Map(output.agreements.map((item) => [item.id, item]));
+  output.records = normalizeRecords(source.records, agreements);
+  output.wishes = normalizeWishes(source.wishes, childIds);
+  const wishIds = new Set(output.wishes.map((wish) => wish.id));
+  output.fruitTransactions = normalizeTransactions(source.fruitTransactions, childIds, agreements, wishIds);
+  output.petPeaks = normalizePetPeaks(source.petPeaks, childIds);
+  output.settings = { handbookUrl: httpUrl(object(source.settings).handbookUrl) };
+  output.bridgeSeen = Boolean(source.bridgeSeen);
+  output.demo = Boolean(source.demo);
   return output;
 }
 
-/**
- * A small storage adapter that can be injected with a fake storage in tests or
- * replaced by a backend-backed implementation later. It never performs I/O
- * outside the supplied storage object.
- */
 export function createStorageAdapter({ storage = globalThis.localStorage, key = STORAGE_KEY } = {}) {
+  let status = { ok: true, error: "" };
   return {
     read() {
-      try {
-        const raw = storage?.getItem(key);
-        return normalizeState(raw ? JSON.parse(raw) : null);
-      } catch {
-        return emptyState();
-      }
+      try { const raw = storage?.getItem(key); status = { ok: true, error: "" }; return normalizeState(raw ? JSON.parse(raw) : null); }
+      catch (error) { status = { ok: false, error: error?.message || "read-failed" }; return emptyState(); }
     },
     write(value) {
-      const normalized = normalizeState(value);
-      try {
-        storage?.setItem(key, JSON.stringify(normalized));
-      } catch {
-        // Quota/private-mode failures must not break the family flow.
-      }
-      return normalized;
+      const state = normalizeState(value);
+      try { if (!storage?.setItem) throw new Error("storage-unavailable"); storage.setItem(key, JSON.stringify(state)); status = { ok: true, error: "" }; }
+      catch (error) { status = { ok: false, error: error?.message || "write-failed" }; }
+      return { state, ...status };
     },
     clear() {
-      try {
-        storage?.removeItem(key);
-      } catch {
-        // Clearing is best effort; the UI remains usable if storage is locked.
-      }
+      try { storage?.removeItem(key); status = { ok: true, error: "" }; }
+      catch (error) { status = { ok: false, error: error?.message || "clear-failed" }; }
+      return status;
     },
+    status: () => ({ ...status }),
   };
+}
+
+function migrateV1(source) {
+  const output = { ...emptyState(), ...source, schemaVersion: 2, version: PRODUCT_VERSION };
+  output.entitlement = stripCredentials(source.entitlement);
+  output.agreements = (Array.isArray(source.agreements) ? source.agreements : []).map((item) => {
+    const stageId = stageFrom(item);
+    return { ...item, stageId, templateId: cleanText(item.templateId || item.problemId, 80), templateVersion: Number(item.templateVersion) || 1, recordMode: item.recordMode === "once-per-cycle" || ["s5", "s6"].includes(stageId) ? "once-per-cycle" : "daily", status: item.status === "completed" ? "reviewed" : (item.status || "active") };
+  });
+  const agreements = new Map(output.agreements.map((item) => [String(item.id), item]));
+  output.records = {};
+  output.fruitTransactions = [];
+  for (const [legacyKey, raw] of Object.entries(object(source.checkins))) {
+    const checkin = object(raw);
+    const agreement = agreements.get(String(checkin.agreementId || legacyKey.split(":")[0]));
+    const localDate = safeDate(checkin.date || legacyKey.split(":").pop());
+    if (!agreement || !localDate) continue;
+    const periodKey = agreement.recordMode === "once-per-cycle" ? `cycle:${agreement.id}` : localDate;
+    for (const role of ["child", "parent"]) {
+      if (!checkin[role]) continue;
+      const recordId = `m1:${agreement.id}:${role}:${periodKey}`;
+      output.records[recordId] = { id: recordId, childId: agreement.childId, agreementId: agreement.id, role, periodKey, localDate, recordedAt: `${localDate}T12:00:00.000Z`, reversedAt: "" };
+      output.fruitTransactions.push({ id: `m1:fruit:${recordId}`, childId: agreement.childId, agreementId: agreement.id, recordId, wishId: "", type: `${role}-step`, amount: 1, createdAt: `${localDate}T12:00:00.000Z`, reversedTransactionId: "" });
+    }
+    if (checkin.child && checkin.parent) output.fruitTransactions.push({ id: `m1:companion:${agreement.id}:${periodKey}`, childId: agreement.childId, agreementId: agreement.id, recordId: "", wishId: "", type: "companion", amount: 1, createdAt: `${localDate}T12:00:00.000Z`, reversedTransactionId: "" });
+  }
+  output.wishes = [];
+  const activeWishChildren = new Set();
+  for (const agreement of output.agreements) {
+    if (!agreement.wishTitle || agreement.wishRedeemed || activeWishChildren.has(agreement.childId)) continue;
+    activeWishChildren.add(agreement.childId);
+    output.wishes.push({ id: `m1:wish:${agreement.id}`, childId: agreement.childId, title: agreement.wishTitle, icon: agreement.wishIcon || "✨", cost: Number(agreement.wishCost) || 0, status: "active", createdAt: agreement.createdAt || "", scheduledDate: "", completedAt: "", cancelledAt: "" });
+  }
+  for (const redemption of Array.isArray(source.redemptions) ? source.redemptions : []) {
+    const agreement = agreements.get(String(redemption.agreementId));
+    if (!agreement) continue;
+    const wishId = `m1:wish:redeemed:${redemption.id || agreement.id}`;
+    const completedAt = safeDate(redemption.date) || agreement.endDate || agreement.startDate;
+    const cost = safeNumber(redemption.cost, 0, 999, Number(agreement.wishCost) || 0);
+    output.wishes.push({ id: wishId, childId: agreement.childId, title: cleanText(redemption.title || agreement.wishTitle, 30), icon: cleanText(redemption.icon || agreement.wishIcon || "✨", 12), cost, status: "completed", createdAt: agreement.createdAt || "", scheduledDate: completedAt, completedAt, cancelledAt: "" });
+    output.fruitTransactions.push({ id: `m1:spend:${wishId}`, childId: agreement.childId, agreementId: agreement.id, recordId: "", wishId, type: "wish-spend", amount: -cost, createdAt: `${completedAt || "1970-01-01"}T12:00:00.000Z`, reversedTransactionId: "" });
+  }
+  output.fruitTransactions = dedupe(output.fruitTransactions);
+  output.wishes = dedupe(output.wishes);
+  delete output.checkins;
+  delete output.redemptions;
+  return output;
 }
 
 function normalizeEntitlement(value) {
-  const source = asRecord(value);
-  if (source.scope !== "all" && source.scope !== "stage") return null;
-  const stageId = source.scope === "all" ? "all" : safeEnum(source.stageId, ["s1", "s2", "s3", "s4", "s5", "s6"], "");
-  if (source.scope === "stage" && !stageId) return null;
-  return {
-    scope: source.scope,
-    stageId,
-    label: safeText(source.label, 80),
-    status: safeEnum(source.status, ["active", "revoked", "expired"], "active"),
-    recoveryCode: safeText(source.recoveryCode, 80),
-  };
+  const source = object(value);
+  if (!['all', 'stage'].includes(source.scope)) return null;
+  const stageId = source.scope === "all" ? "all" : enumValue(source.stageId, STAGES, "");
+  return stageId ? { scope: source.scope, stageId, label: cleanText(source.label, 80), status: enumValue(source.status, ["active", "revoked", "expired"], "active") } : null;
 }
-
+function stripCredentials(value) { const { recoveryCode, activationCode, code, payment, ...safe } = object(value); return safe; }
 function normalizeChildren(value) {
-  if (!Array.isArray(value)) return [];
   const seen = new Set();
-  return value.map((entry) => {
-    const source = asRecord(entry);
-    const id = safeId(source.id);
-    const nickname = safeText(source.nickname, MAX_NICKNAME_LENGTH);
-    const birthDate = /^\d{4}-\d{2}-\d{2}$/.test(String(source.birthDate || "")) ? source.birthDate : "";
-    if (!id || !nickname || !birthDate || seen.has(id)) return null;
-    seen.add(id);
-    return {
-      id,
-      nickname,
-      birthDate,
-      createdAt: safeText(source.createdAt, 80),
-    };
-  }).filter(Boolean);
+  return (Array.isArray(value) ? value : []).map((raw) => { const item = object(raw); const id = safeId(item.id); const nickname = cleanText(item.nickname, 12); const birthDate = safeDate(item.birthDate); if (!id || !nickname || !birthDate || seen.has(id)) return null; seen.add(id); return { id, nickname, birthDate, createdAt: cleanText(item.createdAt, 80) }; }).filter(Boolean);
 }
-
 function normalizeAgreements(value, childIds) {
-  if (!Array.isArray(value)) return [];
   const seen = new Set();
-  return value.map((entry) => {
-    const source = asRecord(entry);
-    const id = safeId(source.id);
-    const childId = safeId(source.childId);
-    if (!id || !childIds.has(childId) || seen.has(id)) return null;
-    seen.add(id);
-    return {
-      id,
-      childId,
-      problemId: safeText(source.problemId, 80),
-      problem: safeText(source.problem, MAX_TEXT_LENGTH),
-      childAction: safeText(source.childAction, MAX_TEXT_LENGTH),
-      parentAction: safeText(source.parentAction, MAX_TEXT_LENGTH),
-      duration: safeNumber(source.duration, 3, 7, 7),
-      startDate: safeDate(source.startDate),
-      endDate: safeDate(source.endDate),
-      wishId: safeText(source.wishId, 80),
-      wishTitle: safeText(source.wishTitle, MAX_TEXT_LENGTH),
-      wishIcon: safeText(source.wishIcon, 12),
-      wishCost: safeNumber(source.wishCost, 0, 999, 0),
-      wishRedeemed: Boolean(source.wishRedeemed),
-      status: safeEnum(source.status, ["active", "completed"], "active"),
-      review: normalizeReview(source.review),
-      createdAt: safeText(source.createdAt, 80),
-    };
+  return (Array.isArray(value) ? value : []).map((raw) => {
+    const item = object(raw); const id = safeId(item.id); const childId = safeId(item.childId); if (!id || !childIds.has(childId) || seen.has(id)) return null; seen.add(id);
+    const stageId = enumValue(item.stageId || stageFrom(item), STAGES, "s4");
+    return { id, childId, stageId, templateId: cleanText(item.templateId || item.problemId, 80), templateVersion: safeNumber(item.templateVersion, 1, 999, 1), problem: cleanText(item.problem, 500), childAction: cleanText(item.childAction, 500), parentAction: cleanText(item.parentAction, 500), recordMode: enumValue(item.recordMode, ["daily", "once-per-cycle"], ["s5", "s6"].includes(stageId) ? "once-per-cycle" : "daily"), duration: [3, 7].includes(Number(item.duration)) ? Number(item.duration) : 7, startDate: safeDate(item.startDate), endDate: safeDate(item.endDate), wishId: safeId(item.wishId), status: enumValue(item.status, AGREEMENT_STATUSES, "active"), review: normalizeReview(item.review), createdAt: cleanText(item.createdAt, 80) };
   }).filter(Boolean);
 }
-
-function normalizeCheckins(value, agreementMap) {
-  if (!isPlainObject(value)) return {};
-  const output = {};
-  for (const [key, entry] of Object.entries(value)) {
-    const source = asRecord(entry);
-    const agreement = agreementMap.get(safeId(source.agreementId));
-    if (!agreement) continue;
-    // The agreement is authoritative. A mismatched childId is discarded rather
-    // than repaired, preventing one child's wallet from seeing another's data.
-    if (source.childId && String(source.childId) !== agreement.childId) continue;
-    const date = safeDate(source.date) || String(key).split(":").pop();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    const normalizedKey = `${agreement.id}:${date}`;
-    output[normalizedKey] = {
-      agreementId: agreement.id,
-      childId: agreement.childId,
-      date,
-      child: Boolean(source.child),
-      parent: Boolean(source.parent),
-    };
+function normalizeRecords(value, agreements) {
+  const output = {}; const unique = new Set();
+  for (const raw of Object.values(object(value))) {
+    const item = object(raw); const agreement = agreements.get(safeId(item.agreementId)); const role = enumValue(item.role, ["child", "parent"], ""); const periodKey = cleanText(item.periodKey, 120); const id = safeId(item.id);
+    if (!agreement || !role || !periodKey || !id || (item.childId && item.childId !== agreement.childId)) continue;
+    const key = `${agreement.id}:${role}:${periodKey}`; if (unique.has(key)) continue; unique.add(key);
+    output[id] = { id, childId: agreement.childId, agreementId: agreement.id, role, periodKey, localDate: safeDate(item.localDate), recordedAt: cleanText(item.recordedAt, 80), reversedAt: cleanText(item.reversedAt, 80) };
   }
   return output;
 }
-
-function normalizeRedemptions(value, agreementMap) {
-  if (!Array.isArray(value)) return [];
-  return value.map((entry) => {
-    const source = asRecord(entry);
-    const agreement = agreementMap.get(safeId(source.agreementId));
-    if (!agreement || (source.childId && String(source.childId) !== agreement.childId)) return null;
-    return {
-      id: safeId(source.id) || `redemption-${agreement.id}-${safeDate(source.date) || "unknown"}`,
-      agreementId: agreement.id,
-      childId: agreement.childId,
-      title: safeText(source.title, MAX_TEXT_LENGTH),
-      icon: safeText(source.icon, 12),
-      cost: safeNumber(source.cost, 0, 999, agreement.wishCost),
-      date: safeDate(source.date),
-    };
+function normalizeWishes(value, childIds) {
+  const seen = new Set();
+  return (Array.isArray(value) ? value : []).map((raw) => { const item = object(raw); const id = safeId(item.id); const childId = safeId(item.childId); if (!id || !childIds.has(childId) || seen.has(id)) return null; seen.add(id); return { id, childId, title: cleanText(item.title, 30), icon: cleanText(item.icon, 12), cost: safeNumber(item.cost, 0, 999, 0), status: enumValue(item.status, WISH_STATUSES, "active"), createdAt: cleanText(item.createdAt, 80), scheduledDate: safeDate(item.scheduledDate), completedAt: cleanText(item.completedAt, 80), cancelledAt: cleanText(item.cancelledAt, 80) }; }).filter(Boolean);
+}
+function normalizeTransactions(value, childIds, agreements, wishIds) {
+  const seen = new Set();
+  return (Array.isArray(value) ? value : []).map((raw) => {
+    const item = object(raw); const id = safeId(item.id); const childId = safeId(item.childId); const type = enumValue(item.type, TRANSACTION_TYPES, ""); const agreementId = safeId(item.agreementId); const wishId = safeId(item.wishId);
+    if (!id || !childIds.has(childId) || !type || seen.has(id)) return null;
+    if (agreementId && (!agreements.has(agreementId) || agreements.get(agreementId).childId !== childId)) return null;
+    if (wishId && !wishIds.has(wishId)) return null;
+    seen.add(id); return { id, childId, agreementId, recordId: safeId(item.recordId), wishId, type, amount: safeNumber(item.amount, -999, 999, 0), createdAt: cleanText(item.createdAt, 80), reversedTransactionId: safeId(item.reversedTransactionId) };
   }).filter(Boolean);
 }
-
-function normalizePetPeaks(value, childIds) {
-  if (!isPlainObject(value)) return {};
-  return Object.fromEntries(Object.entries(value)
-    .filter(([childId]) => childIds.has(childId))
-    .map(([childId, total]) => [childId, safeNumber(total, 0, 100000, 0)]));
-}
-
-function normalizeSettings(value) {
-  const source = asRecord(value);
-  return { handbookUrl: safeHttpUrl(source.handbookUrl) };
-}
-
-function normalizeReview(value) {
-  const source = asRecord(value);
-  if (!Object.keys(source).length) return null;
-  return {
-    outcome: safeText(source.outcome, 40),
-    outcomeLabel: safeText(source.outcomeLabel, MAX_TEXT_LENGTH),
-    outcomeIcon: safeText(source.outcomeIcon, 12),
-    date: safeDate(source.date),
-  };
-}
-
-function asRecord(value) {
-  return isPlainObject(value) ? value : {};
-}
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function safeId(value) {
-  const text = safeText(value, 120);
-  return /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(text) ? text : "";
-}
-
-function safeText(value, maxLength) {
-  return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
-}
-
-function safeDate(value) {
-  const date = safeText(value, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "";
-}
-
-function safeHttpUrl(value) {
-  const text = safeText(value, 2000);
-  if (!text) return "";
-  try {
-    const url = new URL(text);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : "";
-  } catch {
-    return "";
-  }
-}
-
-function safeNumber(value, min, max, fallback) {
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
-}
-
-function safeEnum(value, values, fallback) {
-  return values.includes(value) ? value : fallback;
-}
+function normalizePetPeaks(value, childIds) { return Object.fromEntries(Object.entries(object(value)).filter(([id]) => childIds.has(id)).map(([id, total]) => [id, safeNumber(total, 0, 100000, 0)])); }
+function normalizeReview(value) { const item = object(value); return Object.keys(item).length ? { outcome: cleanText(item.outcome, 40), outcomeLabel: cleanText(item.outcomeLabel, 500), outcomeIcon: cleanText(item.outcomeIcon, 12), date: safeDate(item.date) } : null; }
+function stageFrom(item) { return String(item?.stageId || item?.templateId || item?.problemId || "").match(/^s[1-6]/)?.[0] || "s4"; }
+function dedupe(items) { return [...new Map(items.map((item) => [item.id, item])).values()]; }
+function object(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
+function cleanText(value, max) { return typeof value === "string" ? value.trim().slice(0, max) : ""; }
+function safeId(value) { const result = cleanText(value, 160); return /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/.test(result) ? result : ""; }
+function safeDate(value) { const result = cleanText(value, 10); return /^\d{4}-\d{2}-\d{2}$/.test(result) ? result : ""; }
+function safeNumber(value, min, max, fallback) { const result = Number(value); return Number.isFinite(result) ? Math.min(max, Math.max(min, result)) : fallback; }
+function enumValue(value, values, fallback) { return values.includes(value) ? value : fallback; }
+function httpUrl(value) { const result = cleanText(value, 2000); if (!result) return ""; try { const url = new URL(result); return ["http:", "https:"].includes(url.protocol) ? url.href : ""; } catch { return ""; } }

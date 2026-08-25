@@ -80,5 +80,19 @@ export function checkinReward(value) {
 }
 
 function preset(id, problem, childAction, parentAction, category) {
-  return { id, problem, childAction, parentAction, category };
+  const stageId = id.slice(0, 2);
+  return {
+    id,
+    stageId,
+    category,
+    problem,
+    childAction,
+    parentAction,
+    recommendedDuration: 7,
+    recordMode: ["s5", "s6"].includes(stageId) ? "once-per-cycle" : "daily",
+    imaQuery: problem,
+    riskTags: [],
+    templateVersion: 1,
+    reviewStatus: "reviewed",
+  };
 }

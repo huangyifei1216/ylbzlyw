@@ -1,12 +1,12 @@
-export const APP_VERSION = 5;
+export const APP_VERSION = 5.1;
 
 export const STAGES = [
   stage("s1", "0—1.5岁", "安全依恋建立期", "看护月龄卡", "daily", "今天怎么陪", "一起度过啦"),
   stage("s2", "1.5—3岁", "自主意识萌芽期", "一起玩卡", "daily", "今天怎么陪", "一起玩过啦"),
   stage("s3", "3—6岁", "性格社交奠基期", "一起玩卡", "daily", "今天怎么陪", "一起玩过啦"),
   stage("s4", "7—12岁", "学习习惯与内驱力期", "我们卡", "daily", "今天怎么陪", "聊过啦"),
-  stage("s5", "12—15岁", "青春期破冰期", "聊天卡", "weekly", "这周聊什么", "这周聊过啦"),
-  stage("s6", "15—18岁", "独立责任确立期", "话题卡", "weekly", "这周聊什么", "这周一起过啦"),
+  stage("s5", "12—15岁", "青春期破冰期", "聊天卡", "once-per-cycle", "这一轮聊什么", "这一轮聊过啦"),
+  stage("s6", "15—18岁", "独立责任确立期", "话题卡", "once-per-cycle", "这一轮聊什么", "这一轮聊过啦"),
 ];
 
 export const DEMO_CODES = {
@@ -30,15 +30,15 @@ export const WISHES = {
 
 export function validateCode(value) {
   const code = String(value || "").trim().toUpperCase();
-  if (code === "BB-USED-0001") return { ok: false, error: "used", message: "这个开通码已经使用过，请用找回凭证恢复或联系原订单卖家。" };
+  if (code === "BB-USED-0001") return { ok: false, error: "used", message: "这个开通码已经使用过，请联系原订单卖家核对开通权益。" };
   const match = DEMO_CODES[code];
   return match
-    ? { ok: true, entitlement: { ...match, recoveryCode: code } }
+    ? { ok: true, entitlement: { ...match } }
     : { ok: false, error: "invalid", message: "没有找到这个开通码，请检查字母、数字和横线。" };
 }
 
 export function hasStageAccess(value, stageId) {
-  return value?.scope === "all" || value?.stageId === stageId;
+  return value?.status === "active" && (value?.scope === "all" || value?.stageId === stageId);
 }
 
 export function childLimit(value) {
