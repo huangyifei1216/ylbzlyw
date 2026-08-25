@@ -101,10 +101,11 @@ export function reviewAgreement(agreement, outcome, { reviewedAt = new Date() } 
     change: "这个方向不合适，换个办法",
     pause: "这段时间先放一放",
   };
+  const icons = { continue: "↻", adjust: "↘", change: "↗", pause: "—" };
   return {
     ...current,
     status: outcome === "pause" ? "paused" : "reviewed",
-    review: { outcome, outcomeLabel: labels[outcome], reviewedAt: instantText(reviewedAt) },
+    review: { outcome, outcomeLabel: labels[outcome], outcomeIcon: icons[outcome], reviewedAt: instantText(reviewedAt) },
   };
 }
 
@@ -113,7 +114,7 @@ export function pauseAgreement(agreement, { pausedAt = new Date() } = {}) {
   if (!IN_PROGRESS_STATUSES.includes(current.status)) {
     throw new DomainRuleError("not-pausable", "这条约定现在不能暂停。");
   }
-  return { ...current, status: "paused", review: current.review || { outcome: "pause", reviewedAt: instantText(pausedAt) } };
+  return { ...current, status: "paused", review: current.review || { outcome: "pause", outcomeLabel: "这段时间先放一放", outcomeIcon: "—", reviewedAt: instantText(pausedAt) } };
 }
 
 export function archiveAgreement(agreement) {

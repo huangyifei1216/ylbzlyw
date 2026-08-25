@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { DATA_CONTRACT_VERSION, PRODUCT_VERSION, STORAGE_KEY, createStorageAdapter, emptyState, migrateState, normalizeState } from "../data-contract.mjs";
+import { StateInvariantError } from "../state-invariants.mjs";
 
 assert.equal(DATA_CONTRACT_VERSION, 2);
-assert.equal(PRODUCT_VERSION, 5.1);
+assert.equal(PRODUCT_VERSION, "5.1.1");
 assert.equal(STORAGE_KEY, "ylb.v5.state");
 assert.deepEqual(Object.keys(emptyState()), ["schemaVersion", "version", "entitlement", "children", "currentChildId", "agreements", "records", "fruitTransactions", "wishes", "petPeaks", "settings", "bridgeSeen", "demo"]);
 
@@ -11,7 +12,7 @@ const agreement = { id: "agreement-a", childId: child.id, problemId: "s3-morning
 const v1 = { schemaVersion: 1, entitlement: { scope: "all", stageId: "all", label: "全龄", status: "active", recoveryCode: "SECRET" }, children: [child], currentChildId: child.id, agreements: [agreement], checkins: { "agreement-a:2026-08-24": { agreementId: agreement.id, childId: child.id, date: "2026-08-24", child: true, parent: true } }, redemptions: [], petPeaks: { [child.id]: 3 } };
 const migrated = normalizeState(v1);
 assert.equal(migrated.schemaVersion, 2);
-assert.equal(migrated.version, 5.1);
+assert.equal(migrated.version, "5.1.1");
 assert.equal("recoveryCode" in migrated.entitlement, false);
 assert.equal(migrated.agreements[0].stageId, "s3");
 assert.equal(migrated.agreements[0].recordMode, "daily");
@@ -20,6 +21,18 @@ assert.deepEqual(migrated.fruitTransactions.map((item) => item.amount), [1, 1, 1
 assert.equal(migrated.wishes.length, 1);
 assert.deepEqual(normalizeState(migrated), migrated, "V2 normalization must be idempotent");
 assert.deepEqual(normalizeState(migrateState(v1)), migrated, "V1 migration must be idempotent");
+
+const reviewedAt = "2026-08-25T08:30:00.000Z";
+const reviewedState = normalizeState({ ...migrated, agreements: [{ ...migrated.agreements[0], status: "reviewed", review: { outcome: "continue", outcomeLabel: "再试一轮", outcomeIcon: "↻", reviewedAt } }] });
+assert.equal(reviewedState.agreements[0].review.reviewedAt, reviewedAt);
+assert.equal("date" in reviewedState.agreements[0].review, false);
+const legacyReview = normalizeState({ ...migrated, agreements: [{ ...migrated.agreements[0], status: "reviewed", review: { outcome: "continue", outcomeLabel: "再试一轮", outcomeIcon: "↻", date: "2026-08-25" } }] });
+assert.equal(legacyReview.agreements[0].review.reviewedAt, "2026-08-25T12:00:00.000Z");
+const invalidReviewState = { ...migrated, agreements: [{ ...migrated.agreements[0], status: "reviewed", review: { outcome: "continue", outcomeLabel: "再试一轮", outcomeIcon: "↻", reviewedAt: "not-a-time" } }] };
+assert.throws(() => normalizeState(invalidReviewState), (caught) => caught instanceof StateInvariantError && caught.code === "invalid-reviewed-at");
+const invalidReviewStorage = createStorageAdapter({ storage: { getItem: () => JSON.stringify(invalidReviewState), setItem() {}, removeItem() {} } });
+assert.equal(invalidReviewStorage.read().children.length, 0, "illegal local state must be isolated instead of partially restored");
+assert.equal(invalidReviewStorage.status().ok, false);
 
 const backing = new Map();
 const storage = createStorageAdapter({ storage: { getItem: (key) => backing.get(key) ?? null, setItem: (key, value) => backing.set(key, value), removeItem: (key) => backing.delete(key) } });
@@ -36,4 +49,4 @@ assert.equal(failed.state.children.length, 1);
 assert.match(failed.error, /quota/);
 assert.equal(locked.clear().ok, false);
 
-console.log("Data contract checks passed: V2 shape, idempotent V1 migration, credential stripping, and storage failure status.");
+console.log("Data contract checks passed: V2 shape, reviewedAt migration, invalid-local isolation, idempotent V1 migration, credential stripping, and storage failure status.");

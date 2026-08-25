@@ -25,16 +25,21 @@ export function recordStep(snapshot, input) {
   const agreement = input?.agreement;
   const role = input?.role;
   if (!agreement || !agreement.id || !agreement.childId) throw new DomainRuleError("agreement-not-found", "没有找到这条约定。");
+  if (agreement.status !== "active") {
+    throw new DomainRuleError("agreement-not-active", "这轮约定已经结束或暂停，不能再添加记录。");
+  }
   if (role !== "child" && role !== "parent") throw new DomainRuleError("invalid-role", "记录角色只能是孩子或家长。");
   const localDate = input.localDate;
   const periodKey = periodKeyFor(agreement, localDate);
-  const existing = Object.values(records).find((item) => item.agreementId === agreement.id && item.role === role && item.periodKey === periodKey);
+  const existing = Object.values(records).find((item) => item.agreementId === agreement.id
+    && item.role === role && item.periodKey === periodKey && !item.reversedAt);
   if (existing) {
     return { records, transactions, petPeaks, record: existing, addedTransactions: [], duplicate: true };
   }
 
   const recordedAt = isoInstant(input.recordedAt || new Date());
-  const recordId = input.recordId || `record:${agreement.id}:${role}:${periodKey}`;
+  const recordId = input.recordId || nextRecordId(records, agreement.id, role, periodKey);
+  if (records[recordId]) throw new DomainRuleError("duplicate-record-id", "记录编号冲突，本次操作已停止。");
   const record = { id: recordId, childId: agreement.childId, agreementId: agreement.id, role, periodKey, localDate, recordedAt, reversedAt: null };
   records[recordId] = record;
   const stepTransaction = {
@@ -47,22 +52,28 @@ export function recordStep(snapshot, input) {
     amount: 1,
     createdAt: recordedAt,
     reversedTransactionId: "",
+    periodKey,
+    relatedRecordIds: [recordId],
   };
   const addedTransactions = [];
   appendUnique(transactions, stepTransaction, addedTransactions);
 
   const counterpart = Object.values(records).find((item) => item.agreementId === agreement.id && item.role !== role && item.periodKey === periodKey && !item.reversedAt);
-  if (counterpart) {
+  const liveCompanion = findLiveCompanion(transactions, agreement.id, periodKey);
+  if (counterpart && !liveCompanion) {
+    const relatedRecordIds = [counterpart.id, record.id].sort();
     appendUnique(transactions, {
-      id: `fruit:companion:${agreement.id}:${periodKey}`,
+      id: nextCompanionId(transactions, agreement.id, periodKey),
       childId: agreement.childId,
       agreementId: agreement.id,
-      recordId: "",
+      recordId: record.id,
       wishId: "",
       type: "companion",
       amount: 1,
       createdAt: recordedAt,
       reversedTransactionId: "",
+      periodKey,
+      relatedRecordIds,
     }, addedTransactions);
   }
   const money = walletFor(transactions, agreement.childId);
@@ -86,9 +97,7 @@ export function reverseRecord(snapshot, input) {
   }
   const original = transactions.find((item) => item.recordId === record.id && ["child-step", "parent-step"].includes(item.type));
   if (!original) throw new DomainRuleError("missing-step-transaction", "象果记录不完整，无法撤回。");
-  const companion = transactions.find((item) => item.childId === record.childId && item.agreementId === record.agreementId
-    && item.type === "companion" && item.id === `fruit:companion:${record.agreementId}:${record.periodKey}`
-    && !transactions.some((candidate) => candidate.type === "record-reversal" && candidate.reversedTransactionId === item.id));
+  const companion = findLiveCompanion(transactions, record.agreementId, record.periodKey, record.id);
 
   const reversals = [reversalFor(original, record, reversedAt)];
   if (companion) reversals.push(reversalFor(companion, record, reversedAt));
@@ -129,7 +138,38 @@ function reversalFor(original, record, createdAt) {
     amount: -Math.abs(original.amount),
     createdAt,
     reversedTransactionId: original.id,
+    periodKey: original.periodKey || record.periodKey,
+    relatedRecordIds: [...(original.relatedRecordIds || [record.id])],
   };
+}
+
+function nextRecordId(records, agreementId, role, periodKey) {
+  const prefix = `record:${agreementId}:${role}:${periodKey}:attempt-`;
+  let attempt = Object.values(records).filter((item) => item.agreementId === agreementId
+    && item.role === role && item.periodKey === periodKey).length + 1;
+  while (records[`${prefix}${attempt}`]) attempt += 1;
+  return `${prefix}${attempt}`;
+}
+
+function nextCompanionId(transactions, agreementId, periodKey) {
+  const prefix = `fruit:companion:${agreementId}:${periodKey}:attempt-`;
+  let attempt = transactions.filter((item) => item.type === "companion" && item.agreementId === agreementId
+    && transactionPeriodKey(item) === periodKey).length + 1;
+  while (transactions.some((item) => item.id === `${prefix}${attempt}`)) attempt += 1;
+  return `${prefix}${attempt}`;
+}
+
+function findLiveCompanion(transactions, agreementId, periodKey, recordId = "") {
+  return transactions.find((item) => item.type === "companion" && item.agreementId === agreementId
+    && transactionPeriodKey(item) === periodKey
+    && (!recordId || (item.relatedRecordIds || []).includes(recordId) || item.recordId === recordId)
+    && !transactions.some((candidate) => candidate.type === "record-reversal" && candidate.reversedTransactionId === item.id));
+}
+
+function transactionPeriodKey(transaction) {
+  if (transaction.periodKey) return transaction.periodKey;
+  const legacyPrefix = `fruit:companion:${transaction.agreementId}:`;
+  return transaction.id?.startsWith(legacyPrefix) ? transaction.id.slice(legacyPrefix.length) : "";
 }
 
 function appendUnique(transactions, transaction, added) {

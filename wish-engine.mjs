@@ -47,7 +47,7 @@ export function scheduleWish(wishes, transactions, wishId, { scheduledDate = "",
   if (!canScheduleWish(wish, transactions)) throw new DomainRuleError("insufficient-fruit", "现在的可用象果还不够，暂时不能安排这个家庭心愿。");
   const created = isoInstant(createdAt);
   const transaction = {
-    id: transactionId || `fruit:wish-spend:${wish.id}`,
+    id: transactionId || nextSpendId(transactions, wish.id),
     childId: wish.childId,
     agreementId: "",
     recordId: "",
@@ -83,34 +83,63 @@ export function completeWish(wishes, wishId, { completedAt = new Date(), memoryI
   return { wish: updated, wishes: current, memory };
 }
 
-export function cancelWish(wishes, transactions, wishId, { cancelledAt = new Date(), transactionId } = {}) {
+export function unscheduleWish(wishes, transactions, wishId, { unscheduledAt = new Date(), transactionId } = {}) {
   const current = cloneWishes(wishes);
   const index = current.findIndex((item) => item.id === wishId);
   if (index < 0) throw new DomainRuleError("wish-not-found", "没有找到这个家庭心愿。");
   const wish = current[index];
   if (wish.status === "completed") throw new DomainRuleError("completed-wish", "已经实现的家庭心愿不能取消或退款。");
-  if (wish.status !== "scheduled") throw new DomainRuleError("wish-not-scheduled", "只有已经安排但尚未实现的家庭心愿可以取消。");
-  const spend = asArray(transactions).find((item) => item.wishId === wish.id && item.type === "wish-spend");
-  if (!spend) throw new DomainRuleError("wish-spend-not-found", "没有找到这个心愿的象果支出，无法退款。");
-  if (asArray(transactions).some((item) => item.type === "wish-refund" && item.reversedTransactionId === spend.id)) {
-    throw new DomainRuleError("wish-already-refunded", "这个家庭心愿已经退还过象果。");
-  }
+  if (wish.status !== "scheduled") throw new DomainRuleError("wish-not-scheduled", "只有已经安排但尚未实现的家庭心愿可以取消这次安排。");
+  const refunded = refundLatestSpend(wish, transactions, unscheduledAt, transactionId);
+  const updated = { ...wish, status: "active", scheduledDate: "", cancelledAt: "" };
+  current[index] = updated;
+  return { wish: updated, wishes: current, transactions: refunded.transactions, transaction: refunded.transaction };
+}
+
+export function abandonWish(wishes, transactions, wishId, { cancelledAt = new Date(), transactionId } = {}) {
+  const current = cloneWishes(wishes);
+  const index = current.findIndex((item) => item.id === wishId);
+  if (index < 0) throw new DomainRuleError("wish-not-found", "没有找到这个家庭心愿。");
+  const wish = current[index];
+  if (wish.status === "completed") throw new DomainRuleError("completed-wish", "已经实现的家庭心愿不能取消或退款。");
+  if (!['active', 'scheduled'].includes(wish.status)) throw new DomainRuleError("wish-not-cancellable", "这个家庭心愿已经放下了。");
   const timestamp = isoInstant(cancelledAt);
+  const refunded = wish.status === "scheduled"
+    ? refundLatestSpend(wish, transactions, timestamp, transactionId)
+    : { transactions: asArray(transactions).map((item) => ({ ...item })), transaction: null };
+  const updated = { ...wish, status: "cancelled", scheduledDate: "", cancelledAt: timestamp };
+  current[index] = updated;
+  return { wish: updated, wishes: current, transactions: refunded.transactions, transaction: refunded.transaction };
+}
+
+/** @deprecated Use abandonWish for the whole wish, or unscheduleWish for one arrangement. */
+export const cancelWish = abandonWish;
+
+function refundLatestSpend(wish, transactions, at, transactionId) {
+  const items = asArray(transactions);
+  const spend = [...items].reverse().find((item) => item.wishId === wish.id && item.type === "wish-spend"
+    && !items.some((candidate) => candidate.type === "wish-refund" && candidate.reversedTransactionId === item.id));
+  if (!spend) throw new DomainRuleError("wish-spend-not-found", "没有找到这个心愿的有效象果支出，无法退款。");
+  const timestamp = isoInstant(at);
   const transaction = {
-    id: transactionId || `fruit:wish-refund:${wish.id}`,
+    id: transactionId || `fruit:wish-refund:${spend.id}`,
     childId: wish.childId,
     agreementId: "",
     recordId: "",
     wishId: wish.id,
     type: "wish-refund",
-    amount: wish.cost,
+    amount: Math.abs(spend.amount),
     createdAt: timestamp,
     reversedTransactionId: spend.id,
   };
-  const nextTransactions = appendFruitTransaction(transactions, transaction);
-  const updated = { ...wish, status: "cancelled", cancelledAt: timestamp };
-  current[index] = updated;
-  return { wish: updated, wishes: current, transactions: nextTransactions, transaction };
+  return { transactions: appendFruitTransaction(items, transaction), transaction };
+}
+
+function nextSpendId(transactions, wishId) {
+  const prefix = `fruit:wish-spend:${wishId}:attempt-`;
+  let attempt = asArray(transactions).filter((item) => item.type === "wish-spend" && item.wishId === wishId).length + 1;
+  while (asArray(transactions).some((item) => item.id === `${prefix}${attempt}`)) attempt += 1;
+  return `${prefix}${attempt}`;
 }
 
 function cloneWishes(value) { return asArray(value).map((item) => ({ ...item })); }

@@ -68,17 +68,6 @@ export function petProgress(totalEarned) {
   return { current, next, value, remaining: next.min - totalEarned };
 }
 
-export function wallet(checkins, redemptions = []) {
-  const entries = Object.values(checkins || {});
-  const totalEarned = entries.reduce((sum, item) => sum + Number(Boolean(item.child)) + Number(Boolean(item.parent)) + Number(Boolean(item.child && item.parent)), 0);
-  const spent = redemptions.reduce((sum, item) => sum + Number(item.cost || 0), 0);
-  return { totalEarned, spent, available: Math.max(0, totalEarned - spent) };
-}
-
-export function checkinReward(value) {
-  return Number(Boolean(value?.child)) + Number(Boolean(value?.parent)) + Number(Boolean(value?.child && value?.parent));
-}
-
 function preset(id, problem, childAction, parentAction, category) {
   const stageId = id.slice(0, 2);
   return {

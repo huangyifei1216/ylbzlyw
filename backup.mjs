@@ -1,5 +1,6 @@
 import { DATA_CONTRACT_VERSION, PRODUCT_VERSION, normalizeState } from "./data-contract.mjs";
 import { getAgeInfo } from "./core.mjs";
+import { StateInvariantError, assertStateInvariants } from "./state-invariants.mjs";
 
 export const BACKUP_PRODUCT = "一两步";
 export const BACKUP_FORMAT = "ylbzlyw-family-backup";
@@ -51,8 +52,15 @@ export function parseFamilyBackup(input) {
   if (sourceSchema > DATA_CONTRACT_VERSION) {
     fail("schema-too-new", `这份备份来自更新版本（V${sourceSchema}），当前版本还不能导入。`);
   }
-  const migrated = normalizeState({ ...source, schemaVersion: sourceSchema });
+  let migrated;
+  try { migrated = normalizeState({ ...source, schemaVersion: sourceSchema }); }
+  catch (error) { rejectInvalidState(error); }
   validateFamilyShape(source, migrated, sourceSchema);
+  if (sourceSchema >= 2) {
+    try { migrated = normalizeState({ ...source, schemaVersion: sourceSchema }, { strict: true }); }
+    catch (error) { rejectInvalidState(error); }
+  }
+  assertStateInvariants(migrated);
   const data = familyData(migrated);
   return {
     envelope,
@@ -95,14 +103,17 @@ export function applyPreparedBackup(currentState, prepared, { confirmed = false 
   if (!Array.isArray(data.children) || !Array.isArray(data.agreements)) {
     fail("invalid-preparation", "导入预处理结果无效，请重新选择备份文件。");
   }
-  const replaced = normalizeState({
+  let replaced;
+  try { replaced = normalizeState({
     ...current,
     ...familyData(data),
     entitlement: current.entitlement,
     settings: current.settings,
     bridgeSeen: current.bridgeSeen,
     demo: current.demo,
-  });
+  }, { strict: true }); }
+  catch (error) { rejectInvalidState(error); }
+  assertStateInvariants(replaced);
   return {
     ...replaced,
     entitlement: current.entitlement,
@@ -195,3 +206,7 @@ function record(value) { return value && typeof value === "object" && !Array.isA
 function isRecord(value) { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 function clone(value) { return JSON.parse(JSON.stringify(value)); }
 function fail(code, message) { throw new BackupValidationError(code, message); }
+function rejectInvalidState(error) {
+  const detail = error instanceof StateInvariantError ? error.message : (error?.message || "家庭数据不符合当前规则。");
+  fail("invalid-family-state", `备份包含非法家庭数据：${detail}`);
+}

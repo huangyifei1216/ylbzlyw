@@ -1,4 +1,4 @@
-export const APP_VERSION = 5.1;
+export const APP_VERSION = "5.1.1";
 
 export const STAGES = [
   stage("s1", "0—1.5岁", "安全依恋建立期", "看护月龄卡", "daily", "今天怎么陪", "一起度过啦"),
@@ -17,15 +17,6 @@ export const DEMO_CODES = {
   "BB-S5-0001": entitlement("stage", "s5", "12—15岁当前阶段陪伴卡"),
   "BB-S6-0001": entitlement("stage", "s6", "15—18岁当前阶段陪伴卡"),
   "BB-ALL-0001": entitlement("all", "all", "0—18岁全龄陪伴卡"),
-};
-
-export const WISHES = {
-  s1: ["拍一张今天的合照", "一起晒十分钟太阳", "给孩子读一本小书"],
-  s2: ["一起搭一座小房子", "去楼下慢慢散步", "选一本睡前故事"],
-  s3: ["一起做顿简单早餐", "去公园找三种叶子", "选一部全家看的动画"],
-  s4: ["一起玩三十分钟桌游", "去户外走一圈", "让孩子决定一次家庭菜单", "一起做一件小手工", "看一部全家电影"],
-  s5: ["一起吃顿不聊成绩的饭", "让孩子选一次周末活动", "一起听一首孩子喜欢的歌", "散步时只听不评价"],
-  s6: ["一起吃顿轻松的饭", "按孩子的安排做一次家庭活动", "聊聊成年后想保留的家庭习惯"],
 };
 
 export function validateCode(value) {
@@ -93,46 +84,9 @@ export function dateKeyInShanghai(date = new Date()) {
   return `${map.year}-${map.month}-${map.day}`;
 }
 
-export function weekKey(date = new Date()) {
-  const key = typeof date === "string" ? date : dateKeyInShanghai(date);
-  const [year, month, day] = key.split("-").map(Number);
-  const value = new Date(Date.UTC(year, month - 1, day));
-  const weekday = value.getUTCDay() || 7;
-  value.setUTCDate(value.getUTCDate() - weekday + 1);
-  return value.toISOString().slice(0, 10);
-}
-
 export function formatShortDate(dateString) {
   const [, month, day] = dateString.split("-");
   return `${Number(month)}月${Number(day)}日`;
-}
-
-export function selectCards(cards, child, records, now = new Date()) {
-  const info = getAgeInfo(child.birthDate, now);
-  if (!info.stage) return { main: null, alternatives: [], stage: null };
-  const pool = cards.filter((card) => card.stageId === info.stage.id);
-  const cycleKey = info.stage.frequency === "weekly" ? weekKey(now) : info.today;
-  const previousIds = new Set(records.filter((record) => record.childId === child.id).slice(-4).map((record) => record.cardId));
-  const offset = stableHash(`${child.id}:${cycleKey}:${info.stage.id}`) % Math.max(pool.length, 1);
-  const ordered = [...pool.slice(offset), ...pool.slice(0, offset)];
-  const fresh = ordered.filter((card) => !previousIds.has(card.id));
-  const choices = [...fresh, ...ordered.filter((card) => previousIds.has(card.id))].slice(0, 3);
-  return { main: choices[0] || null, alternatives: choices.slice(1), stage: info.stage };
-}
-
-export function recordKey(childId, date = new Date()) {
-  return `${childId}:${dateKeyInShanghai(date)}`;
-}
-
-export function wishKey(childId, date = new Date()) {
-  return `${childId}:${weekKey(date)}`;
-}
-
-export function seasonalStamp(childId, date = dateKeyInShanghai()) {
-  const key = typeof date === "string" ? date : dateKeyInShanghai(date);
-  const month = Number(key.slice(5, 7));
-  const season = month <= 2 || month === 12 ? ["❄️", "🧣", "☕"] : month <= 5 ? ["🌱", "🌼", "🌤️"] : month <= 8 ? ["🌊", "🍉", "☀️"] : ["🍂", "🌰", "🌙"];
-  return season[stableHash(`${childId}:${key}`) % season.length];
 }
 
 function formatAge(birthDate, today) {
@@ -149,12 +103,6 @@ function formatAge(birthDate, today) {
 
 function daysInMonth(year, month) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
-}
-
-function stableHash(value) {
-  let hash = 2166136261;
-  for (const char of String(value)) hash = Math.imul(hash ^ char.charCodeAt(0), 16777619);
-  return Math.abs(hash >>> 0);
 }
 
 function stage(id, label, title, cardName, frequency, homeTitle, recordLabel) {

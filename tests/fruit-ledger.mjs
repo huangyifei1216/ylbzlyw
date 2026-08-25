@@ -3,7 +3,7 @@ import { DomainRuleError } from "../agreement-engine.mjs";
 import { appendFruitTransaction, recordStep, reverseRecord, walletFor } from "../fruit-ledger.mjs";
 
 const daily = {
-  id: "agreement-a", childId: "child-a", recordMode: "daily", startDate: "2026-08-25", endDate: "2026-08-31",
+  id: "agreement-a", childId: "child-a", recordMode: "daily", startDate: "2026-08-25", endDate: "2026-08-31", status: "active",
 };
 const cycle = { ...daily, id: "agreement-cycle", recordMode: "once-per-cycle" };
 const empty = () => ({ records: {}, transactions: [], petPeaks: {} });
@@ -24,6 +24,13 @@ assert.equal(duplicate.transactions.length, state.transactions.length);
 const nextDay = recordStep(state, { agreement: daily, role: "child", localDate: "2026-08-26", recordedAt: "2026-08-26T04:00:00.000Z" });
 assert.equal(walletFor(nextDay.transactions, "child-a").available, 4);
 
+const childOnly = recordStep(empty(), { agreement: daily, role: "child", localDate: "2026-08-25", recordedAt: at(0) });
+const childOnlyReversed = reverseRecord(childOnly, { recordId: childOnly.record.id, reversedAt: at(1) });
+const childOnlyAgain = recordStep(childOnlyReversed, { agreement: daily, role: "child", localDate: "2026-08-25", recordedAt: at(2) });
+assert.notEqual(childOnlyAgain.record.id, childOnly.record.id, "re-recording must use a new child record ID");
+assert.equal(Object.values(childOnlyAgain.records).length, 2, "re-recording must retain the reversed child record");
+assert.equal(walletFor(childOnlyAgain.transactions, "child-a").available, 1, "child re-recording earns one fruit again");
+
 let weekly = recordStep(empty(), { agreement: cycle, role: "child", localDate: "2026-08-25", recordedAt: at(0) });
 const weeklyAgain = recordStep(weekly, { agreement: cycle, role: "child", localDate: "2026-08-26", recordedAt: "2026-08-26T04:00:00.000Z" });
 assert.equal(weeklyAgain.duplicate, true);
@@ -35,6 +42,12 @@ const reversed = reverseRecord(state, { recordId: parentRecord.id, reversedAt: a
 assert.equal(walletFor(reversed.transactions, "child-a").available, 1);
 assert.equal(reversed.addedTransactions.length, 2);
 assert.equal(reversed.petPeaks["child-a"], 3);
+const rerecorded = recordStep(reversed, { agreement: daily, role: "parent", localDate: "2026-08-25", recordedAt: at(6) });
+assert.notEqual(rerecorded.record.id, parentRecord.id);
+assert.equal(Object.values(rerecorded.records).filter((item) => item.role === "parent").length, 2);
+assert.equal(walletFor(rerecorded.transactions, "child-a").available, 3);
+assert.equal(rerecorded.addedTransactions.filter((item) => item.type === "companion").length, 1);
+assert.equal(new Set(rerecorded.transactions.map((item) => item.id)).size, rerecorded.transactions.length);
 assert.throws(() => reverseRecord(state, { recordId: parentRecord.id, reversedAt: at(12) }), error("reversal-window-expired"));
 
 const spentTransactions = appendFruitTransaction(state.transactions, {
@@ -44,6 +57,10 @@ const spentTransactions = appendFruitTransaction(state.transactions, {
 assert.throws(() => reverseRecord({ ...state, transactions: spentTransactions }, { recordId: parentRecord.id, reversedAt: at(5) }), error("fruit-already-spent"));
 assert.equal(state.records[parentRecord.id].reversedAt, null);
 assert.equal(spentTransactions.length, 4);
+
+for (const status of ["review-due", "reviewed", "paused", "archived"]) {
+  assert.throws(() => recordStep(empty(), { agreement: { ...daily, status }, role: "child", localDate: "2026-08-25", recordedAt: at(0) }), error("agreement-not-active"));
+}
 
 const childB = { ...daily, id: "agreement-b", childId: "child-b" };
 const withB = recordStep(state, { agreement: childB, role: "child", localDate: "2026-08-25", recordedAt: at(3) });

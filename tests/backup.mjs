@@ -73,7 +73,7 @@ const legacy = {
   data: {
     schemaVersion: 1, children: [childA], currentChildId: childA.id,
     agreements: [{ ...agreementA, problemId: "s3-bedtime", wishTitle: "一起散步", wishIcon: "🐘", wishCost: 2, wishRedeemed: false }],
-    checkins: { "agreement-a:2026-08-24": { agreementId: agreementA.id, childId: childA.id, date: "2026-08-24", child: true, parent: true } },
+    checkins: { "agreement-a:2026-08-25": { agreementId: agreementA.id, childId: childA.id, date: "2026-08-25", child: true, parent: true } },
     redemptions: [], petPeaks: { [childA.id]: 3 },
   },
 };
@@ -115,6 +115,18 @@ assert.equal(imported.fruitTransactions.filter((item) => item.childId === childB
 const malformed = structuredClone(envelope);
 malformed.data.children[0].nickname = "";
 assert.throws(() => parseFamilyBackup(malformed), error("invalid-child-data"));
+
+const invalidReview = structuredClone(envelope);
+invalidReview.data.agreements[0].status = "reviewed";
+invalidReview.data.agreements[0].review = { outcome: "continue", outcomeLabel: "再试一轮", outcomeIcon: "↻", reviewedAt: "not-a-time" };
+assert.throws(() => parseFamilyBackup(invalidReview), error("invalid-family-state"));
+const beforeRejectedImport = structuredClone(current);
+assert.throws(() => prepareBackupImport(current, invalidReview, { now: NOW }), error("invalid-family-state"));
+assert.deepEqual(current, beforeRejectedImport, "rejected imports must leave local family data unchanged");
+
+const invalidAmount = structuredClone(envelope);
+invalidAmount.data.fruitTransactions[0].amount = 999;
+assert.throws(() => parseFamilyBackup(invalidAmount), error("invalid-family-state"));
 
 function error(code) {
   return (caught) => caught instanceof BackupValidationError && caught.code === code;
