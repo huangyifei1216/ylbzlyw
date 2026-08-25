@@ -1,0 +1,18 @@
+exclude:
+  - design-source
+  - tests
+  - artifacts
+  - legacy
+  - node_modules
+  - test-results
+  - playwright-report
+  - package.json
+  - package-lock.json
+  - playwright.config.mjs
+  - GPT-PRO-HANDOFF.md
+  - GPT-PRO-REVIEW-INDEX.md
+  - PRD.md
+  - PRD-V4-FINAL.md
+  - README.md
+  - V5.1.1-RELEASE-EVIDENCE.md
+  - project-control.md

@@ -18,9 +18,9 @@
 | 12 | [config.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/config.mjs) | 16 | 519 | development/production 与手册入口配置 |
 | 13 | [tests/e2e/core-flow.spec.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/e2e/core-flow.spec.mjs) | 377 | 25,480 | 17 条移动端用户流程与截图验收 |
 | 14 | [tests/state-invariants.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/state-invariants.mjs) | 67 | 4,864 | 非法业务状态拒绝测试 |
-| 15 | [tests/assets.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/assets.mjs) | 29 | 1,653 | 九张素材独立性、体积与引用检查 |
+| 15 | [tests/assets.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/assets.mjs) | 32 | 1,939 | 九张素材独立性、体积与发布排除检查 |
 | 16 | [styles-brand.css](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/styles-brand.css) | 17 | 10,356 | 品牌皮肤、移动端和青少年模式 |
-| 17 | [V5.1.1-RELEASE-EVIDENCE.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/V5.1.1-RELEASE-EVIDENCE.md) | 122 | 6,792 | Bug、测试、素材、截图、CI 与 Git 证据 |
+| 17 | [V5.1.1-RELEASE-EVIDENCE.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/V5.1.1-RELEASE-EVIDENCE.md) | 122 | 6,875 | Bug、测试、素材、截图、CI 与 Git 证据 |
 
 ## 完整源码下载
 
