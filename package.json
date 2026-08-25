@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/smoke.mjs && node tests/data-contract.mjs && node tests/agreement-engine.mjs && node tests/fruit-ledger.mjs && node tests/wish-engine.mjs && node tests/safety.mjs && node tests/backup.mjs",
+    "test": "node tests/smoke.mjs && node tests/assets.mjs && node tests/data-contract.mjs && node tests/state-invariants.mjs && node tests/agreement-engine.mjs && node tests/fruit-ledger.mjs && node tests/wish-engine.mjs && node tests/safety.mjs && node tests/backup.mjs",
     "check": "npm test",
     "test:e2e": "playwright test",
+    "verify": "npm test && npm run test:e2e",
     "serve": "python3 -m http.server 4173"
   },
   "devDependencies": {

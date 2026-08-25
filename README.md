@@ -26,6 +26,7 @@ npm run serve
 ```bash
 npm test
 npm run test:e2e
+npm run verify
 ```
 
 ## 当前边界
@@ -34,8 +35,8 @@ npm run test:e2e
 
 核心流程：孩子建档 → 选择具体问题 → 家庭约定 → 双方行动 → 象果 → 步步成长／家庭心愿 → 周期回顾。
 
-V5.1 采用独立领域引擎：daily／once-per-cycle 记录、象果流水、10 分钟撤回、心愿安排/实现/取消、V1→V2 数据迁移、敏感问题边界和本地备份均有自动测试。
+V5.1.1 采用独立领域引擎与状态不变量：daily／once-per-cycle 记录、撤回后重记、1＋1＋1 象果、心愿安排/取消安排/放下/实现、V1→V2 数据迁移、敏感问题边界和严格本地备份均有自动测试。
 
-当前验收包含 8 条 Playwright 移动端流程；关键页面截图保存在 [`artifacts/screenshots/`](./artifacts/screenshots/)。步步使用同一角色母版衍生的 1024×1024 透明图片，页面不再绘制临时 SVG。
+当前验收包含 9 组 Node 测试与 17 条 Playwright 移动端流程，CI 使用 Node 22；关键页面截图保存在 [`artifacts/screenshots/`](./artifacts/screenshots/)。步步使用九张 1024×1024 透明 WebP，五阶段语义和图片均独立，页面不再绘制临时 SVG。
 
 产品规则和验收条件见 [PRD.md](./PRD.md)。
