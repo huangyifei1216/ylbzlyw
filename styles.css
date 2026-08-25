@@ -38,11 +38,6 @@ button { cursor: pointer; }
 .field input:focus { border-color: var(--blue); box-shadow: 3px 3px 0 var(--yellow); }
 .field small { color: var(--muted); font-size: 11px; }
 .form-error { padding: 10px 12px; border-left: 4px solid var(--coral); background: #fff0ec; color: #9a2618; font-size: 13px; font-weight: 700; }
-.bubu-art { display: block; position: relative; overflow: hidden; background: #fff8e8; }
-.bubu-art img { position: absolute; width: 242%; height: auto; max-width: none; left: -8%; top: -7%; }
-.bubu-logo, .bubu-mark { width: 100%; height: 100%; border-radius: 22%; }
-.bubu-hero, .bubu-onboarding, .bubu-diary, .bubu-sleep { width: 100%; height: 100%; background: transparent; }
-.bubu-hero img, .bubu-onboarding img, .bubu-diary img, .bubu-sleep img { width: 205%; left: -9%; top: -3%; }
 .auth-page, .bridge-page, .onboarding-page { min-height: 100dvh; padding: max(30px, env(safe-area-inset-top)) 24px 40px; }
 .auth-brand { padding: 22px 8px 30px; text-align: center; }
 .brand-badge { width: 92px; height: 92px; margin: 0 auto 18px; border: 3px solid var(--line); background: var(--yellow); box-shadow: var(--shadow); padding: 5px; }
@@ -89,7 +84,6 @@ button { cursor: pointer; }
 .entitlement-note small { grid-column: 1/-1; color: var(--muted); }
 .topbar { position: sticky; z-index: 20; top: 0; padding: 0 15px; }
 .brand-lockup { display: flex; align-items: center; gap: 9px; border: 0; background: transparent; text-align: left; }
-.brand-lockup > .bubu-art { width: 48px; height: 48px; border: 2px solid var(--line); }
 .brand-lockup strong, .brand-lockup small { display: block; }
 .brand-lockup strong { font: 900 22px var(--display); letter-spacing: .05em; }
 .brand-lockup small { margin-top: 2px; color: var(--muted); font-size: 9px; letter-spacing: .08em; }
@@ -103,7 +97,6 @@ button { cursor: pointer; }
 .home-hero h1 { margin: 10px 0 12px; font: 900 36px/1.15 var(--display); }
 .home-hero-copy > p:last-child { margin: 0; font-size: 13px; line-height: 1.7; opacity: .8; }
 .home-hero-bubu { position: relative; align-self: end; height: 225px; }
-.home-hero-bubu > .bubu-art { height: 220px; }
 .home-hero-bubu > span { position: absolute; right: 10px; bottom: 12px; padding: 5px 8px; border: 1px solid var(--line); background: var(--yellow); color: var(--ink); font-size: 9px; font-weight: 900; transform: rotate(-2deg); }
 .recorded-banner { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; padding: 13px; border: 2px solid var(--line); background: #fff4ca; }
 .recorded-banner > span { font-size: 30px; }
@@ -266,14 +259,6 @@ button { cursor: pointer; }
 
 /* V5 · 家庭约定、象果与步步成长 */
 textarea { color: inherit; font: inherit; }
-.bubu-art { overflow: visible; background: transparent; }
-.bubu-ear { fill: #7ea7ff; stroke: var(--line); stroke-width: 4; }
-.bubu-head { fill: #2d6eea; stroke: var(--line); stroke-width: 4; }
-.bubu-trunk { fill: none; stroke: #2d6eea; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round; }
-.bubu-eye { fill: #fff; stroke: var(--line); stroke-width: 3; }
-.bubu-eye-dot { fill: var(--line); }
-.bubu-smile,.bubu-cheek,.bubu-foot { fill: none; stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
-.brand-badge .bubu-art { width: 100%; height: 100%; }
 .create-shell { background: #f8f3e8; }
 .create-page { min-height: calc(100dvh - 76px); padding: 22px 20px 52px; }
 .create-progress { height: 7px; margin: -22px -20px 30px; background: #d9d1c3; }
@@ -450,10 +435,6 @@ textarea { color: inherit; font: inherit; }
 .wish-next-step { margin: 18px 0; padding: 13px; background: #fff4ca; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .shell-message { margin-top: 25px; }
 .toast.show,.toast.is-visible { opacity: 1; transform: translate(-50%,0); }
-.pet-level-2 .bubu-head { fill: #2464dc; }
-.pet-level-3 .bubu-head { fill: #1f5dcc; }
-.pet-level-4 .bubu-head { fill: #174faf; }
-.pet-level-5 .bubu-head { fill: #123f91; }
 @media (max-width: 370px) {
   .today-heading h1,.create-heading h1 { font-size: 28px; }
   .pet-strip { grid-template-columns: 1fr 120px; }

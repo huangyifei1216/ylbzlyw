@@ -3,9 +3,10 @@ import { DEMO_CODES, childLimit, dateKeyInShanghai, formatShortDate, getAgeInfo,
 import { createStorageAdapter, emptyState } from "./data-contract.mjs";
 import { createAgreement, markReviewDue, periodKeyFor, reviewAgreement } from "./agreement-engine.mjs";
 import { recordStep, reverseRecord, walletFor } from "./fruit-ledger.mjs";
-import { canScheduleWish, cancelWish, completeWish, createWish, scheduleWish } from "./wish-engine.mjs";
+import { abandonWish, canScheduleWish, completeWish, createWish, scheduleWish, unscheduleWish } from "./wish-engine.mjs";
 import { applyPreparedBackup, prepareBackupImport, stringifyFamilyBackup } from "./backup.mjs";
 import { checkProblemSafety, getSafetyBoundary } from "./safety.mjs";
+import { APP_CONFIG } from "./config.mjs";
 
 const app = document.querySelector("#app");
 const toast = document.querySelector("#toast");
@@ -37,14 +38,15 @@ function render() {
       : route === "profile" ? renderProfile(child)
         : route === "review" ? renderReview(child)
           : renderHome(child);
-  setPage(`<div class="app-shell">${renderTopbar(child)}${storageWarning ? storageWarningHtml() : ""}<main class="content">${content}</main>${renderBottomNav(route)}${renderModal()}</div>`);
+  setPage(`<div class="app-shell ${teenClass(child)}">${renderTopbar(child)}${storageWarning ? storageWarningHtml() : ""}<main class="content">${content}</main>${renderBottomNav(route)}${renderModal()}</div>`);
 }
 
 function setPage(html) { app.innerHTML = html; }
 function storageWarningHtml() { return `<aside class="storage-warning" role="alert">当前浏览器无法稳定保存记录。请导出家庭备份，或更换普通浏览模式。</aside>`; }
 
 function renderActivation() {
-  return `<div class="app-shell auth-shell"><main class="auth-page"><section class="auth-brand"><div class="brand-badge">${bubuArt()}</div><p>战略养娃 · 配套行动工具</p><h1>一两步</h1><p class="auth-lead">手册帮你找到方法，<br>一两步陪全家把方法做起来。</p></section><section class="auth-card"><p class="overline">购买后开通</p><h2>输入开通码</h2><form id="activation-form"><label class="field"><span>开通码</span><input id="activation-code" name="code" placeholder="BB-XXXXXX" required></label>${errorHtml()}<button class="brand-button full-button">开通一两步 <span>→</span></button></form><button class="demo-entry" data-action="demo"><b>先看看完整演示</b><small>体验家庭约定、象果、步步成长和心愿</small></button><details class="demo-codes"><summary>开发测试开通码</summary>${Object.keys(DEMO_CODES).map((code) => `<button data-action="fill-code" data-code="${code}">${code}</button>`).join("")}</details></section><p class="auth-footnote">家庭昵称和生日只用于匹配年龄阶段，请勿填写真实姓名、学校、住址等隐私信息。</p></main></div>`;
+  const development = APP_CONFIG.environment === "development";
+  return `<div class="app-shell auth-shell"><main class="auth-page"><section class="auth-brand"><div class="brand-badge">${bubuArt("avatar")}</div><p>战略养娃 · 配套行动工具</p><h1>一两步</h1><p class="auth-lead">手册帮你找到方法，<br>一两步陪全家把方法做起来。</p></section><section class="auth-card"><p class="overline">${development ? "开发体验" : "项目内测"}</p><h2>输入${development ? "测试" : "内测"}开通码</h2><form id="activation-form"><label class="field"><span>开通码</span><input id="activation-code" name="code" placeholder="BB-XXXXXX" required></label>${errorHtml()}<button class="brand-button full-button">${development ? "开通一两步" : "进入内测版"} <span>→</span></button></form>${development ? `<button class="demo-entry" data-action="demo"><b>先看看完整演示</b><small>体验家庭约定、象果、步步成长和心愿</small></button><details class="demo-codes"><summary>开发测试开通码</summary>${Object.keys(DEMO_CODES).map((code) => `<button data-action="fill-code" data-code="${code}">${code}</button>`).join("")}</details>` : `<p class="production-note">当前为内测版本，请使用项目方提供的内测开通方式。</p>`}</section><p class="auth-footnote">家庭昵称和生日只用于匹配年龄阶段，请勿填写真实姓名、学校、住址等隐私信息。</p></main></div>`;
 }
 
 function renderBridge() {
@@ -57,7 +59,7 @@ function renderOnboarding() {
 }
 
 function renderTopbar(child) {
-  return `<header class="topbar"><button class="brand-lockup" data-action="nav" data-view="home">${bubuArt()}<span><strong>一两步</strong><small>战略养娃 · 家庭行动</small></span></button><label class="child-select"><select id="child-switcher" aria-label="切换孩子">${state.children.map((item) => `<option value="${item.id}" ${item.id === child.id ? "selected" : ""}>${h(item.nickname)} · ${h(getAgeInfo(item.birthDate).display)}</option>`).join("")}</select></label></header>`;
+  return `<header class="topbar"><button class="brand-lockup" data-action="nav" data-view="home">${bubuArt("avatar")}<span><strong>一两步</strong><small>战略养娃 · 家庭行动</small></span></button><label class="child-select"><select id="child-switcher" aria-label="切换孩子">${state.children.map((item) => `<option value="${item.id}" ${item.id === child.id ? "selected" : ""}>${h(item.nickname)} · ${h(getAgeInfo(item.birthDate).display)}</option>`).join("")}</select></label></header>`;
 }
 
 function renderCreate(child) {
@@ -67,7 +69,7 @@ function renderCreate(child) {
   if (activeAgreement(child.id) && !draft) return simplePage("先回顾当前约定", "每个孩子同一时间只保留一个进行中的约定。请先完成回顾，再开始新一轮。", "查看当前约定", "agreements");
   if (!draft || draft.childId !== child.id) startDraft(child);
   const step = draft.step;
-  return `<div class="app-shell create-shell"><header class="simple-header"><button data-action="create-back">←</button><b>建立家庭约定</b><i>${step}/4</i></header><main class="create-page"><div class="create-progress"><span style="width:${step * 25}%"></span></div>${step === 1 ? renderProblem(child, info.stage.id) : step === 2 ? renderActions(child) : step === 3 ? renderCycleWish(child) : renderPreview(child)}</main></div>`;
+  return `<div class="app-shell create-shell ${teenClass(child)}"><header class="simple-header"><button data-action="create-back">←</button><b>建立家庭约定</b><i>${step}/4</i></header><main class="create-page"><div class="create-progress"><span style="width:${step * 25}%"></span></div>${step === 1 ? renderProblem(child, info.stage.id) : step === 2 ? renderActions(child) : step === 3 ? renderCycleWish(child) : renderPreview(child)}</main></div>`;
 }
 
 function renderProblem(child, stageId) {
@@ -101,27 +103,29 @@ function renderHome(child) {
   const childRecord = liveRecord(agreement.id, "child", periodKey);
   const parentRecord = liveRecord(agreement.id, "parent", periodKey);
   const earned = [childRecord, parentRecord].filter(Boolean).length + Number(Boolean(childRecord && parentRecord));
-  return `<section class="today-heading"><p class="overline">${h(agreement.duration === 7 ? "这一周" : "这一轮")} · ${formatShortDate(agreement.startDate)}—${formatShortDate(agreement.endDate)}</p><h1>${h(agreement.problem)}</h1></section><section class="mutual-card">${renderAction("child", child, agreement, childRecord)}${renderAction("parent", child, agreement, parentRecord)}<div class="today-reward"><span class="fruit-count" aria-label="${earned}颗象果">${earned ? Array.from({ length: earned }, () => "<i></i>").join("") : "○ ○ ○"}</span><b>${childRecord && parentRecord ? (agreement.recordMode === "daily" ? "今天，你们都向前走了一小步。" : "这一轮，你们都有推进。") : "双方都记下，会多一颗同行象果。"}</b></div></section>${renderPetSummary(child)}${renderWishCard(child)}<section class="home-secondary"><button data-action="open-handbook" data-query="${h(agreement.problem)}"><b>方法需要调整？</b><small>带着当前问题去分龄手册继续查</small><span>↗</span></button><button data-action="nav" data-view="agreements"><b>查看完整约定</b><small>周期、双方记录和过去轮次</small><span>→</span></button></section>`;
+  const teen = ["s5", "s6"].includes(agreement.stageId);
+  const handbookCopy = APP_CONFIG.handbookUrl ? "带着当前问题去分龄手册继续查" : "复制当前问题；手册入口将在正式版本配置";
+  return `<section class="today-heading"><p class="overline">${h(agreement.duration === 7 ? "这一周" : "这一轮")} · ${formatShortDate(agreement.startDate)}—${formatShortDate(agreement.endDate)}</p><h1>${h(agreement.problem)}</h1></section><section class="mutual-card">${renderAction("child", child, agreement, childRecord)}${renderAction("parent", child, agreement, parentRecord)}<div class="today-reward"><span class="fruit-count" aria-label="${earned}颗象果">${earned ? Array.from({ length: earned }, () => "<i></i>").join("") : "○ ○ ○"}</span><b>${childRecord && parentRecord ? (teen ? "这一轮有推进，你们都记下了自己的这一步。" : "今天，你们都向前走了一小步。") : "双方都记下，会多一颗同行象果。"}</b></div></section>${renderPetSummary(child)}${renderWishCard(child)}<section class="home-secondary"><button data-action="open-handbook" data-query="${h(agreement.problem)}"><b>${APP_CONFIG.handbookUrl ? "方法需要调整？" : "复制当前问题"}</b><small>${handbookCopy}</small><span>${APP_CONFIG.handbookUrl ? "↗" : "□"}</span></button><button data-action="nav" data-view="agreements"><b>查看完整约定</b><small>周期、双方记录和过去轮次</small><span>→</span></button></section>`;
 }
 
 function renderAction(role, child, agreement, record) {
   const isChild = role === "child"; const teen = ["s5", "s6"].includes(agreement.stageId); const infant = agreement.stageId === "s1";
   const label = isChild ? (infant ? "宝宝这一步" : `${h(child.nickname)}这一步`) : "家长这一步";
   const action = isChild ? agreement.childAction : agreement.parentAction;
-  const button = isChild ? (infant ? "我观察到宝宝的信号了" : teen ? (agreement.duration === 7 ? "这周聊过啦" : "这一轮聊过啦") : `记录${h(child.nickname)}这一步`) : (teen ? "我也有推进" : "记录家长这一步");
+  const button = isChild ? (infant ? "我观察到宝宝的信号了" : teen ? "这次聊过了" : `记录${h(child.nickname)}这一步`) : (teen ? "我也试过了" : "记录家长这一步");
   const canUndo = record && Date.now() - new Date(record.recordedAt).getTime() <= 600000;
   return `<article class="action-check ${isChild ? "is-child" : "is-parent"} ${record ? "is-done" : ""}"><div><small>${label}</small><p>${h(action)}</p></div>${record ? `<div class="recorded-state"><b>✓ 已记下</b><small>${formatShortDate(record.localDate)}</small>${canUndo ? `<button data-action="undo-record" data-id="${record.id}">撤回误操作</button>` : ""}</div>` : `<button data-action="record-step" data-role="${role}" data-id="${agreement.id}">${button}</button>`}</article>`;
 }
 
 function renderPetSummary(child) {
   const money = safeWallet(child.id); const total = Math.max(money.totalEarned, state.petPeaks[child.id] || 0); const pet = petProgress(total);
-  return `<button class="pet-summary" data-action="nav" data-view="pet"><span>${bubuArt()}</span><b>步步${h(pet.current.name.replace("步步", ""))} · 累计 ${total} 颗 · 可用 ${money.available} 颗</b><i>→</i></button>`;
+  return `<button class="pet-summary" data-action="nav" data-view="pet"><span>${bubuArt("avatar")}</span><b>步步${h(pet.current.name.replace("步步", ""))} · 累计 ${total} 颗 · 可用 ${money.available} 颗</b><i>→</i></button>`;
 }
 
 function renderWishCard(child) {
   const wish = currentWish(child.id); if (!wish) return ""; const money = safeWallet(child.id);
   const copy = wish.status === "scheduled" ? (wish.scheduledDate ? `已安排在 ${formatShortDate(wish.scheduledDate)}，做完以后再回来记下。` : "已经安排好，做完以后再回来记下。") : money.available >= wish.cost ? "象果已经够了，可以一起安排。" : `可用 ${money.available} / ${wish.cost} 颗象果`;
-  return `<section class="wish-progress-card ${money.available >= wish.cost ? "is-ready" : ""}"><span>${wish.icon}</span><div><small>我们的家庭心愿</small><b>${h(wish.title)}</b><p>${copy}</p></div>${wish.status === "active" ? `<button data-action="${money.available >= wish.cost ? "open-schedule" : "pet"}" data-id="${wish.id}">${money.available >= wish.cost ? "一起安排" : "看进度"}</button>` : `<div class="wish-actions"><button data-action="complete-wish" data-id="${wish.id}">这个心愿实现啦</button><button data-action="cancel-wish" data-id="${wish.id}">取消安排</button></div>`}</section>`;
+  return `<section class="wish-progress-card ${money.available >= wish.cost ? "is-ready" : ""}"><span>${wish.icon}</span><div><small>我们的家庭心愿</small><b>${h(wish.title)}</b><p>${copy}</p></div>${wish.status === "active" ? `<div class="wish-actions"><button data-action="${money.available >= wish.cost ? "open-schedule" : "pet"}" data-id="${wish.id}">${money.available >= wish.cost ? "一起安排" : "看进度"}</button><button data-action="abandon-wish" data-id="${wish.id}">换一个家庭心愿</button></div>` : `<div class="wish-actions"><button data-action="complete-wish" data-id="${wish.id}">这个心愿实现啦</button><button data-action="unschedule-wish" data-id="${wish.id}">取消这次安排</button><button data-action="abandon-wish" data-id="${wish.id}">放下这个心愿</button></div>`}</section>`;
 }
 
 function renderEmptyHome(child) {
@@ -148,18 +152,19 @@ function renderReview(child) {
 }
 
 function renderProfile(child) {
-  return `<section class="page-heading"><p class="overline">FAMILY PROFILE</p><h1>我的家庭</h1><p>管理孩子档案、已购范围和当前浏览器里的家庭数据。</p></section><section class="profile-card entitlement-card"><div><small>当前权益 · ${h(state.entitlement.status)}</small><h2>${h(state.entitlement.label)}</h2><p>${state.entitlement.scope === "all" ? "最多3个孩子" : "1个孩子 · 当前阶段"}</p></div></section><section class="profile-card"><div class="section-title"><h2>孩子档案</h2><span>${state.children.length}/${childLimit(state.entitlement)}</span></div><div class="children-list">${state.children.map((item) => `<article><button data-action="select-child" data-id="${item.id}"><b>${h(item.nickname)}</b><small>${h(getAgeInfo(item.birthDate).display)}</small></button><button data-action="delete-child" data-id="${item.id}">×</button></article>`).join("")}</div>${state.children.length < childLimit(state.entitlement) ? `<button class="secondary-button full-button" data-action="add-child">＋ 添加孩子</button>` : ""}</section><section class="profile-card backup-card"><h2>家庭备份</h2><p>数据默认只保存在当前浏览器。可以导出 JSON 文件，之后在已开通权益的设备上手动导入。</p><button class="secondary-button full-button" data-action="export-backup">导出家庭备份</button><label class="import-button">导入家庭备份<input id="backup-input" type="file" accept="application/json,.json"></label><small>恢复之前从“一两步”导出的家庭备份。导入前会先预览，并由你确认是否替换当前本机数据。</small></section><section class="profile-card menu-list"><button data-action="open-handbook"><span>《战略养娃》分龄手册</span><i>↗</i></button><a href="./privacy.html"><span>隐私与使用边界</span><i>→</i></a><button data-action="reset"><span>清空当前浏览器数据</span><i>↺</i></button></section><p class="version-note">一两步 V5.1 · 默认只保存在当前浏览器</p>`;
+  return `<section class="page-heading"><p class="overline">FAMILY PROFILE</p><h1>我的家庭</h1><p>管理孩子档案、已购范围和当前浏览器里的家庭数据。</p></section><section class="profile-card entitlement-card"><div><small>当前权益 · ${h(state.entitlement.status)}</small><h2>${h(state.entitlement.label)}</h2><p>${state.entitlement.scope === "all" ? "最多3个孩子" : "1个孩子 · 当前阶段"}</p></div></section><section class="profile-card"><div class="section-title"><h2>孩子档案</h2><span>${state.children.length}/${childLimit(state.entitlement)}</span></div><div class="children-list">${state.children.map((item) => `<article><button data-action="select-child" data-id="${item.id}"><b>${h(item.nickname)}</b><small>${h(getAgeInfo(item.birthDate).display)}</small></button><button data-action="delete-child" data-id="${item.id}">×</button></article>`).join("")}</div>${state.children.length < childLimit(state.entitlement) ? `<button class="secondary-button full-button" data-action="add-child">＋ 添加孩子</button>` : ""}</section><section class="profile-card backup-card"><h2>家庭备份</h2><p>数据默认只保存在当前浏览器。可以导出 JSON 文件，之后在已开通权益的设备上手动导入。</p><button class="secondary-button full-button" data-action="export-backup">导出家庭备份</button><label class="import-button">导入家庭备份<input id="backup-input" type="file" accept="application/json,.json"></label><small>恢复之前从“一两步”导出的家庭备份。导入前会先预览，并由你确认是否替换当前本机数据。</small></section><section class="profile-card menu-list"><button data-action="open-handbook"><span>${APP_CONFIG.handbookUrl ? "《战略养娃》分龄手册" : "复制当前问题"}</span><i>${APP_CONFIG.handbookUrl ? "↗" : "□"}</i></button>${APP_CONFIG.handbookUrl ? "" : `<small class="handbook-config-note">手册入口将在正式版本配置</small>`}<a href="./privacy.html"><span>隐私与使用边界</span><i>→</i></a><button data-action="reset"><span>清空当前浏览器数据</span><i>↺</i></button></section><p class="version-note">一两步 V5.1.1 · 默认只保存在当前浏览器</p>`;
 }
 
 function renderSafety() {
   const boundary = getSafetyBoundary();
-  return `<div class="app-shell"><header class="simple-header"><button data-action="back-problem">←</button><b>使用边界</b><i></i></header><main class="safety-page"><span class="safety-sign">!</span><p class="overline">SAFETY BOUNDARY</p><h1>${boundary.title}</h1><p>${boundary.body}</p>${blockedProblem ? `<aside>你刚才写的情况触发了最低限度的产品保护。这里只是停止游戏化约定，不代表诊断结果。</aside>` : ""}<ul><li>去分龄手册查看观察边界</li><li>联系医生或合格专业人员</li><li>如有立即危险，联系当地急救、警方或紧急服务</li></ul><button class="brand-button full-button" data-action="open-handbook">去分龄手册查看边界 <span>↗</span></button><button class="secondary-button full-button" data-action="back-problem">返回重新选择问题</button></main></div>`;
+  return `<div class="app-shell ${currentChild() ? teenClass(currentChild()) : ""}"><header class="simple-header"><button data-action="back-problem">←</button><b>使用边界</b><i></i></header><main class="safety-page"><span class="safety-sign">!</span><p class="overline">SAFETY BOUNDARY</p><h1>${boundary.title}</h1><p>${boundary.body}</p>${blockedProblem ? `<aside>你刚才写的情况触发了最低限度的产品保护。这里只是停止游戏化约定，不代表诊断结果。</aside>` : ""}<ul><li>${APP_CONFIG.handbookUrl ? "去分龄手册查看观察边界" : "复制当前问题，之后带到分龄手册"}</li><li>联系医生或合格专业人员</li><li>如有立即危险，联系当地急救、警方或紧急服务</li></ul><button class="brand-button full-button" data-action="open-handbook" data-query="${h(blockedProblem)}">${APP_CONFIG.handbookUrl ? "去分龄手册查看边界" : "复制当前问题"} <span>${APP_CONFIG.handbookUrl ? "↗" : "□"}</span></button>${APP_CONFIG.handbookUrl ? "" : `<p class="handbook-config-note">手册入口将在正式版本配置</p>`}<button class="secondary-button full-button" data-action="back-problem">返回重新选择问题</button></main></div>`;
 }
 
 function renderModal() {
   if (!modal) return "";
   if (modal.type === "schedule") return modalShell(`<h2>一起安排家庭心愿</h2><p>安排不等于已经实现。真正做完以后，再回来记下家庭回忆。</p><form id="schedule-form"><input type="hidden" name="wishId" value="${modal.id}"><label class="field"><span>安排日期（可不填）</span><input type="date" name="scheduledDate" min="${dateKeyInShanghai()}"><small>也可以暂时不定日期。</small></label>${errorHtml()}<button class="brand-button full-button">确认安排</button></form>`);
   if (modal.type === "import") { const p = modal.prepared.preview; return modalShell(`<h2>确认导入家庭备份</h2><p>请先核对备份内容。确认后会替换当前浏览器里的家庭数据，但不会改变当前开通权益。</p><dl class="backup-preview"><div><dt>导出时间</dt><dd>${h(formatInstant(p.exportedAt))}</dd></div><div><dt>孩子档案</dt><dd>${p.childCount}</dd></div><div><dt>家庭约定</dt><dd>${p.agreementCount}</dd></div><div><dt>家庭回忆</dt><dd>${p.memoryCount}</dd></div></dl><button class="danger-button full-button" data-action="confirm-import">确认替换当前本机数据</button><button class="secondary-button full-button" data-action="close-modal">先不导入</button>`); }
+  if (modal.type === "import-error") return modalShell(`<h2>无法导入这份备份</h2><p>${h(modal.message)}</p><p>当前浏览器里的家庭数据没有改变。请重新选择从“一两步”导出的完整 JSON 备份。</p><button class="secondary-button full-button" data-action="close-modal">我知道了</button>`);
   if (modal.type === "delete") return modalShell(`<h2>删除这个孩子的档案？</h2><p>相关约定、双方记录、象果、步步和家庭心愿都会从当前浏览器删除。</p><button class="danger-button full-button" data-action="confirm-delete" data-id="${modal.id}">确认删除</button><button class="secondary-button full-button" data-action="close-modal">先保留</button>`);
   return "";
 }
@@ -173,7 +178,7 @@ async function onClick(event) {
   if (action === "nav") return navigate(target.dataset.view);
   if (["home", "profile", "pet", "agreements"].includes(action)) return navigate(action);
   if (action === "fill-code") { document.querySelector("#activation-code").value = target.dataset.code; return; }
-  if (action === "demo") return seedDemo();
+  if (action === "demo" && APP_CONFIG.environment === "development") return seedDemo();
   if (action === "start-onboarding") { state.bridgeSeen = true; save(); return navigate("onboarding"); }
   if (action === "add-child") return navigate("onboarding");
   if (action === "select-child") { state.currentChildId = target.dataset.id; save(); return navigate("home"); }
@@ -189,7 +194,8 @@ async function onClick(event) {
   if (action === "undo-record") return undoAction(target.dataset.id);
   if (action === "open-schedule") { modal = { type: "schedule", id: target.dataset.id }; formError = ""; return render(); }
   if (action === "complete-wish") return completeWishAction(target.dataset.id);
-  if (action === "cancel-wish") return cancelWishAction(target.dataset.id);
+  if (action === "unschedule-wish") return unscheduleWishAction(target.dataset.id);
+  if (action === "abandon-wish") return abandonWishAction(target.dataset.id);
   if (action === "finish-review") return finishReview(target.dataset.id, target.dataset.value);
   if (action === "open-handbook") return openHandbook(target.dataset.query);
   if (action === "export-backup") return exportBackup();
@@ -211,8 +217,11 @@ function onSubmit(event) {
 
 async function onChange(event) {
   if (event.target.id === "child-switcher") { state.currentChildId = event.target.value; save(); return navigate("home"); }
-  if (event.target.name === "wishId") { draft.wishId = event.target.value; return render(); }
-  if (event.target.id === "backup-input") { const file = event.target.files?.[0]; if (!file) return; try { const prepared = prepareBackupImport(state, await file.text()); modal = { type: "import", prepared }; formError = ""; render(); } catch (error) { showToast(error.message); event.target.value = ""; } }
+  if (["duration", "wishId", "customWishTitle"].includes(event.target.name)) {
+    syncCycleDraftFromForm();
+    if (event.target.name === "wishId") return render();
+  }
+  if (event.target.id === "backup-input") { const file = event.target.files?.[0]; if (!file) return; try { const prepared = prepareBackupImport(state, await file.text()); modal = { type: "import", prepared }; formError = ""; render(); } catch (error) { modal = { type: "import-error", message: error.message }; event.target.value = ""; render(); } }
 }
 
 function activate(code) { const result = validateCode(code); if (!result.ok) { formError = result.message; return render(); } state = { ...emptyState(), entitlement: result.entitlement }; formError = ""; save(); navigate("bridge"); }
@@ -221,6 +230,19 @@ function startDraft(child) { const stage = getAgeInfo(child.birthDate).stage; dr
 function chooseProblem(id) { const preset = presetsForStage(draft.stageId).find((item) => item.id === id); if (!preset) return; draft = { ...draft, step: 2, templateId: preset.id, templateVersion: preset.templateVersion, problem: preset.problem, childAction: preset.childAction, parentAction: preset.parentAction, duration: preset.recommendedDuration, recordMode: preset.recordMode }; render(); }
 function saveActions(problem, childAction, parentAction) { if ([problem, childAction, parentAction].some((value) => value.trim().length < 4)) { formError = "请把问题和双方行动写得更具体一些。"; return render(); } const safety = checkProblemSafety(problem); if (safety.blocked) { blockedProblem = problem; return navigate("safety"); } draft = { ...draft, step: 3, problem: problem.trim(), childAction: childAction.trim(), parentAction: parentAction.trim() }; formError = ""; render(); }
 function saveCycle(duration, wishId, customTitle) { if (![3, 7].includes(duration)) { formError = "请选择3天或7天。"; return render(); } if (!currentWish(draft.childId) && !FAMILY_WISHES.some((item) => item.id === wishId)) { formError = "请选择家庭心愿。"; return render(); } if (!currentWish(draft.childId) && wishId === "custom" && (customTitle.trim().length < 2 || customTitle.trim().length > 30)) { formError = "自定义家庭心愿需要2—30个字。"; return render(); } draft = { ...draft, step: 4, duration, wishId: currentWish(draft.childId)?.id || wishId, customWishTitle: customTitle.trim() }; formError = ""; render(); }
+
+function syncCycleDraftFromForm() {
+  const form = document.querySelector("#cycle-form");
+  if (!form || !draft) return;
+  const data = new FormData(form);
+  const duration = Number(data.get("duration"));
+  draft = {
+    ...draft,
+    duration: [3, 7].includes(duration) ? duration : draft.duration,
+    wishId: String(data.get("wishId") || draft.wishId || ""),
+    customWishTitle: String(data.get("customWishTitle") || "").trim(),
+  };
+}
 
 function confirmAgreementDraft() {
   try {
@@ -236,8 +258,9 @@ function recordAction(agreementId, role) { try { const agreement = state.agreeme
 function undoAction(recordId) { try { const result = reverseRecord({ records: state.records, transactions: state.fruitTransactions, petPeaks: state.petPeaks }, { recordId, reversedAt: new Date() }); state.records = result.records; state.fruitTransactions = result.transactions; save(); showToast("误操作已撤回，象果同步调整"); render(); } catch (error) { showToast(error.message); } }
 function scheduleWishAction(wishId, scheduledDate) { try { const result = scheduleWish(state.wishes, state.fruitTransactions, wishId, { scheduledDate }); state.wishes = result.wishes; state.fruitTransactions = result.transactions; modal = null; save(); showToast("家庭心愿已经安排好"); render(); } catch (error) { formError = error.message; render(); } }
 function completeWishAction(wishId) { try { const result = completeWish(state.wishes, wishId); state.wishes = result.wishes; save(); showToast("这个心愿已收进家庭回忆"); render(); } catch (error) { showToast(error.message); } }
-function cancelWishAction(wishId) { if (!confirm("取消这次安排并全额返还象果吗？")) return; try { const result = cancelWish(state.wishes, state.fruitTransactions, wishId); state.wishes = result.wishes; state.fruitTransactions = result.transactions; save(); showToast("安排已取消，象果已经返还"); render(); } catch (error) { showToast(error.message); } }
-function finishReview(id, outcome) { try { const agreement = state.agreements.find((item) => item.id === id); const reviewed = reviewAgreement(agreement, outcome); replaceAgreement(reviewed); save(); if (outcome === "pause") { showToast("这一轮先放一放"); return navigate("home"); } const child = currentChild(); const info = getAgeInfo(child.birthDate); startDraft(child); if (outcome === "continue" || outcome === "adjust") { draft = { ...draft, step: outcome === "continue" ? 3 : 2, problem: agreement.problem, childAction: agreement.childAction, parentAction: agreement.parentAction, templateId: agreement.templateId, templateVersion: agreement.templateVersion, duration: agreement.duration, wishId: currentWish(child.id)?.id || "movie" }; } showToast("这一轮已收进过去"); navigate("create"); } catch (error) { showToast(error.message); } }
+function unscheduleWishAction(wishId) { if (!confirm("取消这次安排并全额返还象果吗？心愿会继续保留。")) return; try { const result = unscheduleWish(state.wishes, state.fruitTransactions, wishId); state.wishes = result.wishes; state.fruitTransactions = result.transactions; save(); showToast("这次安排已取消，心愿和象果都保留"); render(); } catch (error) { showToast(error.message); } }
+function abandonWishAction(wishId) { if (!confirm("确定放下这个家庭心愿吗？之后可以重新选择一个新心愿。")) return; try { const result = abandonWish(state.wishes, state.fruitTransactions, wishId); state.wishes = result.wishes; state.fruitTransactions = result.transactions; save(); showToast("这个心愿已放下，可以重新选择"); render(); } catch (error) { showToast(error.message); } }
+function finishReview(id, outcome) { try { const agreement = state.agreements.find((item) => item.id === id); const reviewed = reviewAgreement(agreement, outcome); replaceAgreement(reviewed); save(); if (outcome === "pause") { showToast("这一轮先放一放"); return navigate("home"); } const child = currentChild(); const info = getAgeInfo(child.birthDate); startDraft(child); if ((outcome === "continue" || outcome === "adjust") && agreement.stageId !== info.stage?.id) { showToast("孩子已经进入新的成长阶段，我们从这个阶段重新选一个当前问题。"); return navigate("create"); } if (outcome === "continue" || outcome === "adjust") { draft = { ...draft, step: outcome === "continue" ? 3 : 2, problem: agreement.problem, childAction: agreement.childAction, parentAction: agreement.parentAction, templateId: agreement.templateId, templateVersion: agreement.templateVersion, duration: agreement.duration, wishId: currentWish(child.id)?.id || "movie" }; } showToast("这一轮已收进过去"); navigate("create"); } catch (error) { showToast(error.message); } }
 
 function exportBackup() { const blob = new Blob([stringifyFamilyBackup(state)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `一两步家庭备份-${dateKeyInShanghai()}.json`; link.click(); URL.revokeObjectURL(url); showToast("家庭备份已经导出"); }
 function confirmImport() { try { state = applyPreparedBackup(state, modal.prepared, { confirmed: true }); modal = null; save(); showToast("家庭备份已经导入"); navigate("home"); } catch (error) { showToast(error.message); } }
@@ -246,7 +269,14 @@ function resetApp() { if (state.entitlement && !confirm("确定清空当前浏�
 
 function seedDemo() { const entitlement = validateCode("BB-ALL-0001").entitlement; const child = { id: "demo-feifei", nickname: "菲菲", birthDate: "2020-05-18", createdAt: new Date().toISOString() }; state = { ...emptyState(), entitlement, children: [child], currentChildId: child.id, bridgeSeen: true, demo: true }; startDraft(child); draft = { ...draft, step: 4, templateId: "s3-morning", problem: "早上出门总磨蹭", childAction: "起床后先完成自己选的第一项准备", parentAction: "我只提醒一次，并给两个可接受的选择", duration: 7, wishId: "movie" }; save(); confirmAgreementDraft(); }
 function activateFromMagicLink() { const code = new URLSearchParams(location.search).get("code"); if (!code || state.entitlement) return; const result = validateCode(code); if (result.ok) { state.entitlement = result.entitlement; save(); history.replaceState({}, "", `${location.pathname}#/bridge`); } }
-async function openHandbook(query = "") { const text = query || "请结合孩子年龄，告诉我现场第一步、具体话术和需要观察的情况。"; try { await navigator.clipboard.writeText(text); showToast("问题已复制，请到分龄手册中粘贴"); } catch { /* Clipboard is optional. */ } if (state.settings.handbookUrl) window.open(state.settings.handbookUrl, "_blank", "noopener"); }
+async function openHandbook(query = "") {
+  const text = query || blockedProblem || "请结合孩子年龄，告诉我现场第一步、具体话术和需要观察的情况。";
+  if (APP_CONFIG.handbookUrl) window.open(APP_CONFIG.handbookUrl, "_blank", "noopener");
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(APP_CONFIG.handbookUrl ? "手册已打开，当前问题已复制" : "当前问题已复制；手册入口将在正式版本配置");
+  } catch { showToast(APP_CONFIG.handbookUrl ? "手册已打开，但问题未能自动复制" : "未能自动复制，请长按当前问题复制"); }
+}
 
 function activeAgreement(childId) { return [...state.agreements].reverse().find((item) => item.childId === childId && ["active", "review-due"].includes(item.status)) || null; }
 function currentWish(childId) { return [...state.wishes].reverse().find((item) => item.childId === childId && ["active", "scheduled"].includes(item.status)) || null; }
@@ -263,7 +293,8 @@ function statusLabel(status) { return ({ active: "进行中", "review-due": "待
 function formatCompleted(value) { const date = String(value || "").slice(0, 10); return /^\d{4}-/.test(date) ? formatShortDate(date) : "已经实现"; }
 function formatInstant(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? "未知" : date.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" }); }
 function errorHtml() { return formError ? `<p class="form-error" role="alert">${h(formError)}</p>` : ""; }
-function bubuArt(variant = "today") { const safe = ["today", "rest", "fruit", "growth-1", "growth-2", "growth-3", "growth-4", "growth-5"].includes(variant) ? variant : "today"; return `<img class="bubu-image" src="./assets/bubu-${safe}.png" alt="小象步步">`; }
+function bubuArt(variant = "today") { const safe = ["avatar", "today", "rest", "fruit", "growth-1", "growth-2", "growth-3", "growth-4", "growth-5"].includes(variant) ? variant : "today"; const eager = ["avatar", "today"].includes(safe); return `<img class="bubu-image" src="./assets/bubu-${safe}.webp" width="1024" height="1024" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async" alt="小象步步">`; }
+function teenClass(child) { return ["s5", "s6"].includes(getAgeInfo(child?.birthDate).stage?.id) ? "is-teen" : ""; }
 let toastTimer; function showToast(message) { toast.textContent = message; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("show"), 2600); }
 function uid(prefix) { return `${prefix}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`; }
 function h(value = "") { return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]); }
