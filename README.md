@@ -14,6 +14,7 @@ npm run serve
 
 - 在线预览：[ylbzlyw dev](https://huangyifei1216.github.io/ylbzlyw/)
 - GitHub 源码：[dev 分支](https://github.com/huangyifei1216/ylbzlyw/tree/dev)
+- GPT Pro 完整阅读入口：[GPT-PRO-REVIEW-INDEX.md](./GPT-PRO-REVIEW-INDEX.md)
 
 完整演示可直接点击开通页的“先看看完整演示”。测试码包括：
 
