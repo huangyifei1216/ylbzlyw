@@ -1,6 +1,6 @@
 import { FAMILY_WISHES, PET_STAGES, petProgress, presetsForStage } from "./agreements.mjs";
 import { childLimit, dateKeyInShanghai, formatShortDate, getAgeInfo, hasStageAccess } from "./core.mjs";
-import { createStorageAdapter, emptyState } from "./data-contract.mjs";
+import { STORAGE_KEY, createStorageAdapter, emptyState } from "./data-contract.mjs";
 import { createAgreement, markReviewDue, periodKeyFor, reviewAgreement } from "./agreement-engine.mjs";
 import { recordStep, reverseRecord, walletFor } from "./fruit-ledger.mjs";
 import { abandonWish, canScheduleWish, completeWish, createWish, scheduleWish, unscheduleWish } from "./wish-engine.mjs";
@@ -21,6 +21,7 @@ let blockedProblem = "";
 let storageWarning = !storage.status().ok;
 
 window.addEventListener("hashchange", render);
+window.addEventListener("storage", onExternalStorageChange);
 app.addEventListener("click", onClick);
 app.addEventListener("submit", onSubmit);
 app.addEventListener("change", onChange);
@@ -85,7 +86,7 @@ function renderActions(child) {
 
 function renderCycleWish(child) {
   const wish = currentWish(child.id);
-  return `<section class="create-heading"><p class="overline">第三步 · 先试一小段</p><h1>这次先试多久？</h1><p>结束后只看什么有用，不打分，不统计完成率。</p></section><form id="cycle-form"><div class="duration-options">${[3, 7].map((value) => `<label><input type="radio" name="duration" value="${value}" ${draft.duration === value ? "checked" : ""}><span><b>先试${value}天</b><small>${value === 3 ? "适合刚开始或动作较难" : "适合生活习惯与沟通"}</small></span></label>`).join("")}</div>${wish ? `<section class="carry-wish"><small>继续为这个家庭心愿积累</small><b>${wish.icon} ${h(wish.title)}</b><p>心愿不会因为一轮约定结束而消失。</p></section><input type="hidden" name="wishId" value="${wish.id}">` : `<div class="wish-title"><p class="overline">选一个全家都期待的体验</p><h2>象果攒够后，一起安排</h2><p>不把父母陪伴变成孩子服从后的奖品。</p></div><div class="wish-picker">${FAMILY_WISHES.map((item) => `<label><input type="radio" name="wishId" value="${item.id}" ${draft.wishId === item.id ? "checked" : ""}><span><i>${item.icon}</i><b>${h(item.title)}</b><small>${item.cost}颗象果</small></span></label>`).join("")}</div><label class="field custom-wish-field ${draft.wishId === "custom" ? "" : "is-hidden"}"><span>我们的家庭心愿</span><input name="customWishTitle" minlength="2" maxlength="30" value="${h(draft.customWishTitle || "")}" placeholder="例如：周末一起去江边散步"><small>2—30个字，选一个全家愿意一起安排的体验。</small></label>`}${errorHtml()}<button class="brand-button full-button">一起确认约定 <span>→</span></button></form>`;
+  return `<section class="create-heading"><p class="overline">第三步 · 先试一小段</p><h1>这次先试多久？</h1><p>结束后只看什么有用，不打分，不统计完成率。</p></section><form id="cycle-form"><div class="duration-options">${[3, 7].map((value) => `<label><input type="radio" name="duration" value="${value}" ${draft.duration === value ? "checked" : ""}><span><b>先试${value}天</b><small>${value === 3 ? "适合刚开始或动作较难" : "适合生活习惯与沟通"}</small></span></label>`).join("")}</div>${wish ? `<section class="carry-wish"><small>继续为这个家庭心愿积累</small><b>${h(wish.icon)} ${h(wish.title)}</b><p>心愿不会因为一轮约定结束而消失。</p></section><input type="hidden" name="wishId" value="${wish.id}">` : `<div class="wish-title"><p class="overline">选一个全家都期待的体验</p><h2>象果攒够后，一起安排</h2><p>不把父母陪伴变成孩子服从后的奖品。</p></div><div class="wish-picker">${FAMILY_WISHES.map((item) => `<label><input type="radio" name="wishId" value="${item.id}" ${draft.wishId === item.id ? "checked" : ""}><span><i>${h(item.icon)}</i><b>${h(item.title)}</b><small>${item.cost}颗象果</small></span></label>`).join("")}</div><label class="field custom-wish-field ${draft.wishId === "custom" ? "" : "is-hidden"}"><span>我们的家庭心愿</span><input name="customWishTitle" minlength="2" maxlength="30" value="${h(draft.customWishTitle || "")}" placeholder="例如：周末一起去江边散步"><small>2—30个字，选一个全家愿意一起安排的体验。</small></label>`}${errorHtml()}<button class="brand-button full-button">一起确认约定 <span>→</span></button></form>`;
 }
 
 function renderPreview(child) {
@@ -127,7 +128,7 @@ function renderPetSummary(child) {
 function renderWishCard(child) {
   const wish = currentWish(child.id); if (!wish) return ""; const money = safeWallet(child.id);
   const copy = wish.status === "scheduled" ? (wish.scheduledDate ? `已安排在 ${formatShortDate(wish.scheduledDate)}，做完以后再回来记下。` : "已经安排好，做完以后再回来记下。") : money.available >= wish.cost ? "象果已经够了，可以一起安排。" : `可用 ${money.available} / ${wish.cost} 颗象果`;
-  return `<section class="wish-progress-card ${money.available >= wish.cost ? "is-ready" : ""}"><span>${wish.icon}</span><div><small>我们的家庭心愿</small><b>${h(wish.title)}</b><p>${copy}</p></div>${wish.status === "active" ? `<div class="wish-actions"><button data-action="${money.available >= wish.cost ? "open-schedule" : "pet"}" data-id="${wish.id}">${money.available >= wish.cost ? "一起安排" : "看进度"}</button><button data-action="abandon-wish" data-id="${wish.id}">换一个家庭心愿</button></div>` : `<div class="wish-actions"><button data-action="complete-wish" data-id="${wish.id}">这个心愿实现啦</button><button data-action="unschedule-wish" data-id="${wish.id}">取消这次安排</button><button data-action="abandon-wish" data-id="${wish.id}">放下这个心愿</button></div>`}</section>`;
+  return `<section class="wish-progress-card ${money.available >= wish.cost ? "is-ready" : ""}"><span>${h(wish.icon)}</span><div><small>我们的家庭心愿</small><b>${h(wish.title)}</b><p>${copy}</p></div>${wish.status === "active" ? `<div class="wish-actions"><button data-action="${money.available >= wish.cost ? "open-schedule" : "pet"}" data-id="${wish.id}">${money.available >= wish.cost ? "一起安排" : "看进度"}</button><button data-action="abandon-wish" data-id="${wish.id}">换一个家庭心愿</button></div>` : `<div class="wish-actions"><button data-action="complete-wish" data-id="${wish.id}">这个心愿实现啦</button><button data-action="unschedule-wish" data-id="${wish.id}">取消这次安排</button><button data-action="abandon-wish" data-id="${wish.id}">放下这个心愿</button></div>`}</section>`;
 }
 
 function renderEmptyHome(child) {
@@ -145,7 +146,7 @@ function renderAgreements(child) {
 function renderPet(child) {
   const money = safeWallet(child.id); const total = Math.max(money.totalEarned, state.petPeaks[child.id] || 0); const pet = petProgress(total); const current = currentWish(child.id); const memories = state.wishes.filter((item) => item.childId === child.id && item.status === "completed");
   const growthIndex = Math.max(0, PET_STAGES.findIndex((item) => item.name === pet.current.name));
-  return `<section class="pet-home"><div class="pet-big-art">${bubuArt(`growth-${growthIndex + 1}`)}</div><p class="overline">${h(child.nickname)}和步步</p><h1>${h(pet.current.name)}</h1><p>${h(pet.current.note)}</p><div class="pet-wallet"><div><strong>${money.available}</strong><span>可用象果</span></div><div><strong>${total}</strong><span>累计象果</span></div></div></section><section class="growth-card"><h2>步步怎么长大</h2><p>${pet.next ? `再获得 ${pet.remaining} 颗象果，步步会${h(pet.next.name.replace("步步", ""))}。` : "步步已经住进成长小屋，新的象果会继续留下家庭故事。"}</p><div class="growth-stages">${PET_STAGES.map((item) => `<div class="${total >= item.min ? "is-open" : ""}"><span>${item.badge}</span><small>${item.min}颗</small><b>${h(item.name.replace("步步", ""))}</b></div>`).join("")}</div></section><section class="fruit-rule"><h2>象果怎么获得？</h2><p>孩子这一步 1 颗 ＋ 家长这一步 1 颗 ＋ 双方同行 1 颗。</p><small>${["s5", "s6"].includes(getAgeInfo(child.birthDate).stage?.id) ? "青春期约定按整轮记录，整个周期最多3颗。" : "日常约定按本地日期记录，每天最多3颗。"} 累计成长达到过的阶段不会倒退。</small></section>${current ? renderWishCard(child) : ""}<section class="wish-memories"><h2>家庭回忆</h2>${memories.map((wish) => `<article><span>${wish.icon}</span><div><b>${h(wish.title)}</b><small>${formatCompleted(wish.completedAt)}</small></div></article>`).join("") || `<p>真正实现的家庭心愿会留在这里。</p>`}</section>`;
+  return `<section class="pet-home"><div class="pet-big-art">${bubuArt(`growth-${growthIndex + 1}`)}</div><p class="overline">${h(child.nickname)}和步步</p><h1>${h(pet.current.name)}</h1><p>${h(pet.current.note)}</p><div class="pet-wallet"><div><strong>${money.available}</strong><span>可用象果</span></div><div><strong>${total}</strong><span>累计象果</span></div></div></section><section class="growth-card"><h2>步步怎么长大</h2><p>${pet.next ? `再获得 ${pet.remaining} 颗象果，步步会${h(pet.next.name.replace("步步", ""))}。` : "步步已经住进成长小屋，新的象果会继续留下家庭故事。"}</p><div class="growth-stages">${PET_STAGES.map((item) => `<div class="${total >= item.min ? "is-open" : ""}"><span>${item.badge}</span><small>${item.min}颗</small><b>${h(item.name.replace("步步", ""))}</b></div>`).join("")}</div></section><section class="fruit-rule"><h2>象果怎么获得？</h2><p>孩子这一步 1 颗 ＋ 家长这一步 1 颗 ＋ 双方同行 1 颗。</p><small>${["s5", "s6"].includes(getAgeInfo(child.birthDate).stage?.id) ? "青春期约定按整轮记录，整个周期最多3颗。" : "日常约定按本地日期记录，每天最多3颗。"} 累计成长达到过的阶段不会倒退。</small></section>${current ? renderWishCard(child) : ""}<section class="wish-memories"><h2>家庭回忆</h2>${memories.map((wish) => `<article><span>${h(wish.icon)}</span><div><b>${h(wish.title)}</b><small>${formatCompleted(wish.completedAt)}</small></div></article>`).join("") || `<p>真正实现的家庭心愿会留在这里。</p>`}</section>`;
 }
 
 function renderReview(child) {
@@ -154,7 +155,7 @@ function renderReview(child) {
 }
 
 function renderProfile(child) {
-  return `<section class="page-heading"><p class="overline">FAMILY PROFILE</p><h1>我的家庭</h1><p>管理孩子档案、已购范围和当前浏览器里的家庭数据。</p></section><section class="profile-card entitlement-card"><div><small>当前权益 · ${h(state.entitlement.status)}</small><h2>${h(state.entitlement.label)}</h2><p>${state.entitlement.scope === "all" ? "最多3个孩子" : "1个孩子 · 当前阶段"}</p></div></section><section class="profile-card"><div class="section-title"><h2>孩子档案</h2><span>${state.children.length}/${childLimit(state.entitlement)}</span></div><div class="children-list">${state.children.map((item) => `<article><button data-action="select-child" data-id="${item.id}"><b>${h(item.nickname)}</b><small>${h(getAgeInfo(item.birthDate).display)}</small></button><button data-action="delete-child" data-id="${item.id}">×</button></article>`).join("")}</div>${state.children.length < childLimit(state.entitlement) ? `<button class="secondary-button full-button" data-action="add-child">＋ 添加孩子</button>` : ""}</section><section class="profile-card backup-card"><h2>家庭备份</h2><p>数据默认只保存在当前浏览器。可以导出 JSON 文件，之后在已开通权益的设备上手动导入。</p><button class="secondary-button full-button" data-action="export-backup">导出家庭备份</button><label class="import-button">导入家庭备份<input id="backup-input" type="file" accept="application/json,.json"></label><small>恢复之前从“一两步”导出的家庭备份。导入前会先预览，并由你确认是否替换当前本机数据。</small></section><section class="profile-card menu-list"><button data-action="open-handbook"><span>${APP_CONFIG.handbookUrl ? "《战略养娃》分龄手册" : "复制当前问题"}</span><i>${APP_CONFIG.handbookUrl ? "↗" : "□"}</i></button>${APP_CONFIG.handbookUrl ? "" : `<small class="handbook-config-note">手册入口将在正式版本配置</small>`}<a href="./privacy.html"><span>隐私与使用边界</span><i>→</i></a><button data-action="reset"><span>清空当前浏览器数据</span><i>↺</i></button></section><p class="version-note">一两步 V5.1.2 · 默认只保存在当前浏览器</p>`;
+  return `<section class="page-heading"><p class="overline">FAMILY PROFILE</p><h1>我的家庭</h1><p>管理孩子档案、已购范围和当前浏览器里的家庭数据。</p></section><section class="profile-card entitlement-card"><div><small>当前权益 · ${h(state.entitlement.status)}</small><h2>${h(state.entitlement.label)}</h2><p>${state.entitlement.scope === "all" ? "最多3个孩子" : "1个孩子 · 当前阶段"}</p></div></section><section class="profile-card"><div class="section-title"><h2>孩子档案</h2><span>${state.children.length}/${childLimit(state.entitlement)}</span></div><div class="children-list">${state.children.map((item) => `<article><button data-action="select-child" data-id="${item.id}"><b>${h(item.nickname)}</b><small>${h(getAgeInfo(item.birthDate).display)}</small></button><button data-action="delete-child" data-id="${item.id}">×</button></article>`).join("")}</div>${state.children.length < childLimit(state.entitlement) ? `<button class="secondary-button full-button" data-action="add-child">＋ 添加孩子</button>` : ""}</section><section class="profile-card backup-card"><h2>家庭备份</h2><p>数据默认只保存在当前浏览器。可以导出 JSON 文件，之后在已开通权益的设备上手动导入。</p><button class="secondary-button full-button" data-action="export-backup">导出家庭备份</button><label class="import-button">导入家庭备份<input id="backup-input" type="file" accept="application/json,.json"></label><small>恢复之前从“一两步”导出的家庭备份。导入前会先预览，并由你确认是否替换当前本机数据。</small></section><section class="profile-card menu-list"><button data-action="open-handbook"><span>${APP_CONFIG.handbookUrl ? "《战略养娃》分龄手册" : "复制当前问题"}</span><i>${APP_CONFIG.handbookUrl ? "↗" : "□"}</i></button>${APP_CONFIG.handbookUrl ? "" : `<small class="handbook-config-note">手册入口将在正式版本配置</small>`}<a href="./privacy.html"><span>隐私与使用边界</span><i>→</i></a><button data-action="reset"><span>清空当前浏览器数据</span><i>↺</i></button></section><p class="version-note">一两步 V5.1.3 · 默认只保存在当前浏览器</p>`;
 }
 
 function renderSafety() {
@@ -250,10 +251,12 @@ function syncCycleDraftFromForm() {
 function confirmAgreementDraft() {
   try {
     let wish = currentWish(draft.childId);
-    if (!wish) { const option = FAMILY_WISHES.find((item) => item.id === draft.wishId); const made = createWish(state.wishes, { childId: draft.childId, title: draft.wishId === "custom" ? draft.customWishTitle : option.title, icon: option.icon, cost: option.cost }); state.wishes = made.wishes; wish = made.wish; }
+    let nextWishes = state.wishes;
+    if (!wish) { const option = FAMILY_WISHES.find((item) => item.id === draft.wishId); const made = createWish(state.wishes, { childId: draft.childId, title: draft.wishId === "custom" ? draft.customWishTitle : option.title, icon: option.icon, cost: option.cost }); nextWishes = made.wishes; wish = made.wish; }
     const child = currentChild(); const info = getAgeInfo(child.birthDate);
     const made = createAgreement(state.agreements, { ...draft, id: uid("agreement"), wishId: wish.id }, { entitlement: state.entitlement, currentStageId: info.stage?.id, isAdult: info.graduated });
-    state.agreements = made.agreements; if (!save()) return render(); draft = null; showToast("家庭约定已经开始"); navigate("home");
+    const nextState = { ...state, wishes: nextWishes, agreements: made.agreements };
+    if (!save(nextState)) return render(); draft = null; showToast("家庭约定已经开始"); navigate("home");
   } catch (error) { showToast(error.message); }
 }
 
@@ -268,7 +271,7 @@ function finishReview(id, outcome) { try { const agreement = state.agreements.fi
 function exportBackup() { const blob = new Blob([stringifyFamilyBackup(state)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `一两步家庭备份-${dateKeyInShanghai()}.json`; link.click(); URL.revokeObjectURL(url); showToast("家庭备份已经导出"); }
 function confirmImport() { try { state = applyPreparedBackup(state, modal.prepared, { confirmed: true }); if (!save()) return render(); modal = null; showToast("家庭备份已经导入"); navigate("home"); } catch (error) { showToast(error.message); } }
 function deleteChild(id) { state.children = state.children.filter((item) => item.id !== id); const agreementIds = new Set(state.agreements.filter((item) => item.childId === id).map((item) => item.id)); state.agreements = state.agreements.filter((item) => item.childId !== id); state.records = Object.fromEntries(Object.entries(state.records).filter(([, item]) => item.childId !== id && !agreementIds.has(item.agreementId))); state.fruitTransactions = state.fruitTransactions.filter((item) => item.childId !== id); state.wishes = state.wishes.filter((item) => item.childId !== id); delete state.petPeaks[id]; state.currentChildId = state.children[0]?.id || ""; if (!save()) return render(); modal = null; navigate(state.children.length ? "profile" : "onboarding"); }
-function resetApp() { if (state.entitlement && !confirm("确定清空当前浏览器里的一两步数据吗？建议先导出家庭备份。")) return; storage.clear(); state = emptyState(); storageWarning = !storage.status().ok; draft = null; modal = null; location.hash = "#/activate"; render(); }
+function resetApp() { if (state.entitlement && !confirm("确定清空当前浏览器里的一两步数据吗？建议先导出家庭备份。")) return; const result = storage.clear(); state = result.state; storageWarning = !result.ok; if (!result.ok) { formError = "未能清空本机数据，当前家庭资料仍然保留。请导出备份后更换普通浏览模式再试。"; showToast("清空失败，家庭资料没有变化"); return render(); } draft = null; modal = null; formError = ""; location.hash = "#/activate"; render(); }
 
 function seedDemo() { if (!demoAccess) return; const entitlement = { scope: "all", stageId: "all", label: "0—18岁全龄陪伴卡", status: "active" }; const child = { id: "demo-feifei", nickname: "菲菲", birthDate: "2020-05-18", createdAt: new Date().toISOString() }; state = { ...emptyState(), entitlement, children: [child], currentChildId: child.id, bridgeSeen: true, demo: true }; startDraft(child); draft = { ...draft, step: 4, templateId: "s3-morning", problem: "早上出门总磨蹭", childAction: "起床后先完成自己选的第一项准备", parentAction: "我只提醒一次，并给两个可接受的选择", duration: 7, wishId: "movie" }; if (save()) confirmAgreementDraft(); }
 function activateFromMagicLink() { if (!demoAccess) return; const code = new URLSearchParams(location.search).get("code"); if (!code || state.entitlement) return; const result = demoAccess.validateDemoCode(code); if (result.ok) { state.entitlement = result.entitlement; if (save()) history.replaceState({}, "", `${location.pathname}#/bridge`); } }
@@ -278,8 +281,20 @@ async function openHandbook(query = "") {
   if (APP_CONFIG.handbookUrl && !opened) { modal = { type: "handbook-blocked", url: APP_CONFIG.handbookUrl }; render(); }
   try {
     await navigator.clipboard.writeText(text);
-    showToast(APP_CONFIG.handbookUrl ? "手册已打开，当前问题已复制" : "当前问题已复制；手册入口将在正式版本配置");
-  } catch { showToast(APP_CONFIG.handbookUrl ? "手册已打开，但问题未能自动复制" : "未能自动复制，请长按当前问题复制"); }
+    showToast(opened ? "手册已打开，当前问题已复制" : APP_CONFIG.handbookUrl ? "浏览器拦截了新页面，当前问题已复制" : "当前问题已复制；手册入口将在正式版本配置");
+  } catch { showToast(opened ? "手册已打开，但问题未能自动复制" : APP_CONFIG.handbookUrl ? "浏览器拦截了新页面，请长按当前问题复制" : "未能自动复制，请长按当前问题复制"); }
+}
+
+function onExternalStorageChange(event) {
+  if (event.storageArea !== localStorage || event.key !== STORAGE_KEY) return;
+  state = storage.read();
+  if (APP_CONFIG.environment === "production") state = { ...state, entitlement: null };
+  storageWarning = !storage.status().ok;
+  draft = null;
+  modal = null;
+  formError = storageWarning ? "另一页面更新了家庭资料，但本页读取失败。请刷新后再试。" : "";
+  showToast(storageWarning ? "未能同步另一页面的更新" : "已同步另一页面的家庭更新");
+  render();
 }
 
 function activeAgreement(childId) { return [...state.agreements].reverse().find((item) => item.childId === childId && ["active", "review-due"].includes(item.status)) || null; }
@@ -288,7 +303,7 @@ function wishFromDraft(childId) { const current = currentWish(childId); if (curr
 function liveRecord(agreementId, role, periodKey) { return Object.values(state.records).find((item) => item.agreementId === agreementId && item.role === role && item.periodKey === periodKey && !item.reversedAt) || null; }
 function safeWallet(childId) { try { return walletFor(state.fruitTransactions, childId); } catch { return { available: 0, totalEarned: state.petPeaks[childId] || 0 }; } }
 function replaceAgreement(value) { state.agreements = state.agreements.map((item) => item.id === value.id ? value : item); }
-function save() { const result = storage.write(state); state = result.state; storageWarning = !result.ok; if (!result.ok) { formError = "这次操作没有保存，页面已恢复到上一次成功保存的状态。请导出备份或更换普通浏览模式。"; showToast("未能保存，这次操作已撤回"); } return result.ok; }
+function save(candidate = state) { const result = storage.write(candidate); state = result.state; storageWarning = !result.ok; if (!result.ok) { const conflict = result.error === "storage-conflict"; formError = conflict ? "另一页面刚刚更新了家庭资料，本页这次操作没有覆盖它。请确认最新内容后再操作。" : "这次操作没有保存，页面已恢复到上一次成功保存的状态。请导出备份或更换普通浏览模式。"; showToast(conflict ? "已保留另一页面的最新更新" : "未能保存，这次操作已撤回"); } return result.ok; }
 function persistenceFailureHtml() { return `<section class="shell-message"><h1>这次操作没有保存</h1><p>页面已恢复到上一次成功保存的状态。请先导出家庭备份，或更换普通浏览模式后再试。</p></section>`; }
 function currentChild() { return state.children.find((item) => item.id === state.currentChildId) || state.children[0]; }
 function routeName() { return location.hash.replace(/^#\/?/, "").split("?")[0] || "home"; }

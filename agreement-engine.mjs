@@ -97,6 +97,10 @@ export function reviewAgreement(agreement, outcome, { reviewedAt = new Date() } 
   if (!REVIEW_OUTCOMES.includes(outcome)) {
     throw new DomainRuleError("invalid-review", "请选择一个回顾方向。");
   }
+  const reviewedAtText = instantText(reviewedAt);
+  if (localDateFromInstant(reviewedAtText) <= current.endDate) {
+    throw new DomainRuleError("review-before-cycle-end", "约定结束后才能回顾这一轮。");
+  }
   const labels = {
     continue: "有一点变化，再试一轮",
     adjust: "动作有点难，改简单一些",
@@ -107,16 +111,16 @@ export function reviewAgreement(agreement, outcome, { reviewedAt = new Date() } 
   return {
     ...current,
     status: outcome === "pause" ? "paused" : "reviewed",
-    review: { outcome, outcomeLabel: labels[outcome], outcomeIcon: icons[outcome], reviewedAt: instantText(reviewedAt) },
+    review: { outcome, outcomeLabel: labels[outcome], outcomeIcon: icons[outcome], reviewedAt: reviewedAtText },
   };
 }
 
 export function pauseAgreement(agreement, { pausedAt = new Date() } = {}) {
   const current = cloneAgreement(agreement);
-  if (!IN_PROGRESS_STATUSES.includes(current.status)) {
+  if (current.status !== "review-due") {
     throw new DomainRuleError("not-pausable", "这条约定现在不能暂停。");
   }
-  return { ...current, status: "paused", review: current.review || { outcome: "pause", outcomeLabel: "这段时间先放一放", outcomeIcon: "—", reviewedAt: instantText(pausedAt) } };
+  return reviewAgreement(current, "pause", { reviewedAt: pausedAt });
 }
 
 export function archiveAgreement(agreement) {

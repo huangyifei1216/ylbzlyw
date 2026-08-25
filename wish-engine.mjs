@@ -1,5 +1,6 @@
 import { DomainRuleError } from "./agreement-engine.mjs";
 import { appendFruitTransaction, walletFor } from "./fruit-ledger.mjs";
+import { isAllowedWishIcon } from "./wish-icons.mjs";
 
 export const WISH_STATUSES = Object.freeze(["active", "scheduled", "completed", "cancelled"]);
 
@@ -16,11 +17,13 @@ export function createWish(wishes, input, { createdAt = new Date() } = {}) {
   const cost = Number(input?.cost);
   if (!Number.isInteger(cost) || cost <= 0) throw new DomainRuleError("invalid-wish-cost", "家庭心愿需要有效的象果数量。");
   const timestamp = isoInstant(createdAt);
+  const icon = typeof input?.icon === "string" ? input.icon.trim() : "";
+  if (!isAllowedWishIcon(icon)) throw new DomainRuleError("invalid-wish-icon", "请选择产品提供的家庭心愿图标。");
   const wish = {
     id: requiredText(input?.id || `wish:${childId}:${timestamp.replace(/[^0-9]/g, "")}`, "无法建立家庭心愿。"),
     childId,
     title,
-    icon: typeof input?.icon === "string" ? input.icon.trim() : "",
+    icon,
     cost,
     status: "active",
     createdAt: timestamp,

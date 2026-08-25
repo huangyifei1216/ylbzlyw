@@ -45,14 +45,16 @@ assert.equal(walletFor(rescheduled.transactions, "child-a").available, 0);
 const cancelled = abandonWish(rescheduled.wishes, rescheduled.transactions, "wish-c", { cancelledAt: at(26, 4) });
 assert.equal(cancelled.wish.status, "cancelled");
 assert.equal(walletFor(cancelled.transactions, "child-a").available, 3);
-const replacement = createWish(cancelled.wishes, { id: "wish-replacement", childId: "child-a", title: "一起野餐", cost: 3 }, { createdAt: at(26, 5) });
+const replacement = createWish(cancelled.wishes, { id: "wish-replacement", childId: "child-a", title: "一起野餐", icon: "✨", cost: 3 }, { createdAt: at(26, 5) });
 assert.equal(replacement.wish.status, "active");
 
 // Agreement lifecycle is not an input: an active wish survives a round ending.
-const retained = createWish([], { id: "wish-retained", childId: "child-a", title: "周末公园", cost: 9 }, { createdAt: at(27) });
+const retained = createWish([], { id: "wish-retained", childId: "child-a", title: "周末公园", icon: "🌳", cost: 9 }, { createdAt: at(27) });
 assert.equal(retained.wishes[0].status, "active");
 
-const childBWish = createWish(retained.wishes, { id: "wish-child-b", childId: "child-b", title: "家庭游戏", cost: 1 }, { createdAt: at(27, 1) });
+const childBWish = createWish(retained.wishes, { id: "wish-child-b", childId: "child-b", title: "家庭游戏", icon: "🎲", cost: 1 }, { createdAt: at(27, 1) });
+
+assert.throws(() => createWish([], { id: "wish-xss", childId: "child-a", title: "危险图标", icon: "<style>/*", cost: 3 }), error("invalid-wish-icon"));
 assert.equal(childBWish.wishes.length, 2);
 assert.equal(canScheduleWish(childBWish.wishes[1], ledger.transactions), false);
 assert.equal(walletFor(ledger.transactions, "child-b").available, 0);

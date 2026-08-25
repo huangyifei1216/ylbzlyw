@@ -1,72 +1,45 @@
-# 战略养娃｜GPT Pro 交接说明（V5.1.1）
+# 战略养娃｜GPT Pro 交接说明（V5.1.3）
 
-## 当前产品
+## 产品与边界
 
-这是“战略养娃｜家庭约定 + 双方行动 + 象果 + 小象步步成长”的本地 H5，不是 IMA 知识库问答的复制品。
+“一两步”是《战略养娃》IMA 分龄知识库配套的本地家庭行动 H5，不是知识问答页。IMA 帮家长理解原因、找到话术和观察边界；一两步把一个方法变成 3/7 天家庭约定：孩子一步、家长一步、双方记录、1＋1＋1 象果、步步成长、家庭心愿与周期回顾。
 
-核心闭环：
+当前没有生产订单后端、支付、登录、云同步、跨设备自动恢复或正式 IMA API。默认数据只在当前浏览器，可手动导出/导入家庭备份；备份不会恢复或覆盖权益。
 
-1. 家长激活全年龄/年龄档位权益
-2. 建立孩子档案（昵称、生日）
-3. 选择当前亲子问题
-4. 家长和孩子一起确认一个 3 天或 7 天的小约定
-5. 家长分别记录“孩子做到了”和“家长做到了”
-6. 双方记录后按 1＋1＋1 获得象果
-7. 累计象果陪小象步步成长，可用象果用于安排家庭心愿
-8. 周期结束后完成回顾，继续、简化、换方向或暂停
+## V5.1.3 重点
 
-IMA 的定位：提供分龄理解、现场话术和观察提醒；H5 的定位：把一次回答变成家长和孩子能共同执行的小行动。
+- 心愿图标只允许 `wish-icons.mjs` 固定白名单，自定义心愿固定 `✨`；备份入口拒绝 HTML/CSS 注入，所有图标输出仍做 HTML 转义。
+- 存储写入与清空都执行快照比较、结果验证和失败回滚。清空失败不跳转、不清 UI；成功清空后最后快照同步变为空。
+- 多标签页通过 `storage` 事件实时刷新，陈旧页面写入返回 `storage-conflict`，不能静默覆盖另一页的新数据。
+- 建立“心愿＋约定”先在局部快照完成，领域规则全部成功后才一次持久化，不再产生半成品心愿。
+- 状态不变量覆盖创建时间、上海本地记录日期、回顾截止、step/record 同时、companion 晚于双方记录、心愿生命周期与按时间逐笔非负余额。
+- `npm run build:production` 只复制 26 个白名单运行文件，明确排除测试码模块、文档、测试、截图和设计源图。
 
-## 目录重点
+## 必须按顺序读取
 
-- `PRD.md`：当前产品主 PRD
-- `PRD-V4-FINAL.md`：上一版完整 PRD，作为背景参考
-- `app.js`：页面路由、状态和交互
-- `styles.css`：页面结构与基础组件；`styles-brand.css`：正式品牌皮肤、移动端和青少年模式
-- `config.mjs`：development/production 与分龄手册外链配置
-- `core.mjs`：年龄档位、权益与上海时区日期规则
-- `agreements.mjs`：六阶段约定模板和步步成长配置
-- `data-contract.mjs`：V2 本地状态数据契约、V1 迁移、子女隔离和存储适配器
-- `state-invariants.mjs`：规范化后状态的引用、唯一性、日期、互斥与账本不变量
-- `agreement-engine.mjs`：约定周期、状态、阶段和权益规则
-- `fruit-ledger.mjs`：双方记录、象果流水、撤回和步步历史峰值
-- `wish-engine.mjs`：心愿创建、安排、取消一次安排、放下、实现和退款
-- `backup.mjs`：只包含家庭数据的严格备份导出、预览和确认导入
-- `safety.mjs`：自定义问题最低限度的风险边界
-- `tests/smoke.mjs`：核心产品烟测
-- `tests/data-contract.mjs`：数据契约和存储测试
-- `tests/state-invariants.mjs`：非法业务状态拒绝测试
-- `tests/assets.mjs`：素材存在、哈希和体积预算测试
-- `tests/e2e/core-flow.spec.mjs`：17 条移动端真实用户流程与截图验收
-- `assets/bubu-*.webp`：九张 1024 方形透明生产素材；高分辨率源文件只在 `design-source/`
-- `.github/workflows/verify.yml`：Node 22 单测和 Playwright 自动验证
+1. `PRD.md`：产品定位、规则、页面与 21 条验收条件。
+2. `app.js`：页面路由、交互、事务提交、多页面同步和输出转义。
+3. `agreements.mjs`：六阶段模板、心愿预设与步步成长配置。
+4. `data-contract.mjs`：V2 规范化、V1 迁移、CAS 存储与清空事务。
+5. `state-invariants.mjs`：跨对象引用、生命周期、时间线与账本不变量。
+6. `agreement-engine.mjs`、`fruit-ledger.mjs`、`wish-engine.mjs`：三个领域引擎。
+7. `backup.mjs`、`wish-icons.mjs`、`config.mjs`：备份边界、图标白名单与运行配置。
+8. `tests/*.mjs` 与 `tests/e2e/core-flow.spec.mjs`：9 组 Node 测试和 24 条移动端流程。
+9. `scripts/build-production.mjs`：生产发布白名单。
 
-## 本地运行
-
-在本目录运行：
+## 本地验证
 
 ```bash
-python3 -m http.server 4173 --bind 127.0.0.1
-```
-
-然后打开：`http://127.0.0.1:4173/`
-
-验证命令：
-
-```bash
-node --check app.js
-node --check core.mjs
-node --check agreements.mjs
-node --check data-contract.mjs
+npm ci
 npm test
+npm run build:production
 npm run test:e2e
-npm run verify
 ```
 
-## 给 GPT Pro 的任务边界
+默认配置是 production fail-closed；开发测试必须在页面加载前显式注入 `window.__YLB_CONFIG__ = { environment: "development" }`。公开生产目录中不应存在 `demo-access.mjs`。
 
-先阅读本文件、`PRD.md`、`app.js`、领域引擎和 `data-contract.mjs`，再修改代码。不要把产品改回 IMA 问答页，也不要删除“孩子一步 + 家长一步 + 象果 + 步步成长 + 家庭心愿”的闭环。
+## 对抗式复审任务
 
-当前实现使用 V2 数据合同和严格状态不变量，状态默认只保存在当前浏览器，可手动导入/导出家庭备份；备份不会覆盖当前权益。尚未接入生产订单后端、支付、登录、云同步、跨设备自动恢复或正式 IMA API。
+请只读、独立复审，不根据文档直接给 GO。重点攻击：心愿图标持久化注入、V2 严格导入静默修正、清空/写入失败分叉、两标签页丢更新、约定/记录/象果/心愿时间线、历史余额先负后正、孤立 companion reversal、生产包泄露测试码，以及 375×667 首屏和底栏遮挡。
 
-当前自动化还覆盖撤回后重新记录、非 active 拒绝记录、回顾时间迁移、非法备份拒绝、3 天草稿保持、跨阶段不复制、取消安排保留心愿、production 隔离、手册外链行为、五阶段素材与三尺寸移动端布局。截图在 `artifacts/screenshots/`。
+不要把产品改回 IMA 问答页，也不要删除“孩子一步＋家长一步＋象果＋步步成长＋家庭心愿”的闭环。

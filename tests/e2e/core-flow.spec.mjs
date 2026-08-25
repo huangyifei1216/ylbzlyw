@@ -174,7 +174,7 @@ test("孩子跨阶段后完成回顾不会复制旧阶段模板", async ({ page 
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("ylb.v5.state"));
     state.children[0].birthDate = "2019-08-24";
-    state.agreements[0].status = "review-due";
+    state.agreements[0] = { ...state.agreements[0], duration: 3, startDate: "2026-08-21", endDate: "2026-08-23", createdAt: "2026-08-21T04:00:00.000Z", status: "review-due" };
     localStorage.setItem("ylb.v5.state", JSON.stringify(state));
   });
   await page.goto("/#/review");
@@ -352,6 +352,7 @@ test("心愿安排不等于实现，只有真实实现后才进入家庭回忆",
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("ylb.v5.state"));
     const agreement = state.agreements[0];
+    Object.assign(agreement, { duration: 3, startDate: "2026-08-21", endDate: "2026-08-23", createdAt: "2026-08-21T04:00:00.000Z" });
     const addDays = (value, days) => { const date = new Date(`${value}T00:00:00.000Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
     for (let index = 0; index < 3; index++) {
       const localDate = addDays(agreement.startDate, index); const createdAt = `${localDate}T04:00:00.000Z`;
@@ -368,6 +369,7 @@ test("心愿安排不等于实现，只有真实实现后才进入家庭回忆",
     localStorage.setItem("ylb.v5.state", JSON.stringify(state));
   });
   await page.reload();
+  await page.goto("/#/pet");
   await page.getByRole("button", { name: "一起安排" }).click();
   await page.getByRole("button", { name: "确认安排" }).click();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")).wishes[0].status)).toBe("scheduled");
@@ -423,4 +425,64 @@ test("手册弹窗被浏览器拦截时提供当前页可点击降级入口", as
   await page.getByRole("button", { name: "方法需要调整？" }).click();
   await expect(page.getByRole("heading", { name: "新窗口没有打开" })).toBeVisible();
   await expect(page.getByRole("link", { name: "在当前页面打开分龄手册" })).toHaveAttribute("href", "https://handbook.example/path");
+});
+
+test("恶意心愿图标备份被拒绝且不会生成样式或脚本节点", async ({ page }) => {
+  await activateAndCreate(page);
+  await page.getByRole("button", { name: "我的" }).click();
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
+  state.wishes[0].icon = "<style>/*";
+  state.wishes[0].title = "*/body{display:none}";
+  const envelope = { product: "一两步", format: "ylbzlyw-family-backup", backupVersion: 1, schemaVersion: 2, appVersion: "5.1.3", exportedAt: new Date().toISOString(), data: { children: state.children, currentChildId: state.currentChildId, agreements: state.agreements, records: state.records, fruitTransactions: state.fruitTransactions, wishes: state.wishes, petPeaks: state.petPeaks } };
+  await page.locator("#backup-input").setInputFiles({ name: "injected-family.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(envelope)) });
+  await expect(page.getByRole("heading", { name: "无法导入这份备份" })).toBeVisible();
+  await expect(page.locator("#app style, #app script, #app textarea")).toHaveCount(0);
+  await expect(page.locator("body")).toBeVisible();
+});
+
+test("清空存储失败时保留当前家庭且不跳回开通页", async ({ page }) => {
+  await activateAndCreate(page);
+  await page.getByRole("button", { name: "我的" }).click();
+  await page.evaluate(() => {
+    const original = Storage.prototype.removeItem;
+    Storage.prototype.removeItem = function patched(key) {
+      if (key === "ylb.v5.state") throw new Error("locked-test");
+      return original.call(this, key);
+    };
+  });
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: /清空当前浏览器数据/ }).click();
+  await expect(page).toHaveURL(/#\/profile/);
+  await expect(page.getByText("菲菲", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("无法稳定保存");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")).children[0].nickname)).toBe("菲菲");
+});
+
+test("成功清空后刷新仍保持为空家庭", async ({ page }) => {
+  await activateAndCreate(page);
+  await page.getByRole("button", { name: "我的" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: /清空当前浏览器数据/ }).click();
+  await expect(page).toHaveURL(/#\/activate/);
+  expect(await page.evaluate(() => localStorage.getItem("ylb.v5.state"))).toBeNull();
+  await page.reload();
+  await expect(page.getByLabel("开通码")).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("ylb.v5.state"))).toBeNull();
+});
+
+test("同一浏览器两个页面实时同步且不会静默覆盖", async ({ page }) => {
+  await activateAndCreate(page);
+  const second = await page.context().newPage();
+  await second.addInitScript(() => { window.__YLB_CONFIG__ = { environment: "development", handbookUrl: "" }; });
+  await second.goto("/#/home");
+  await expect(second.locator(".today-heading h1")).toBeVisible();
+
+  await page.getByRole("button", { name: /记录菲菲这一步/ }).click();
+  await expect(second.locator(".action-check.is-child .recorded-state")).toContainText("已记下");
+  await second.getByRole("button", { name: /记录家长这一步/ }).click();
+  await expect(page.getByText(/累计 3 颗/)).toBeVisible();
+  const finalState = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
+  expect(Object.keys(finalState.records)).toHaveLength(2);
+  expect(finalState.fruitTransactions.reduce((sum, item) => sum + item.amount, 0)).toBe(3);
+  await second.close();
 });

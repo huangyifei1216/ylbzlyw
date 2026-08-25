@@ -1,8 +1,9 @@
 import { assertStateInvariants } from "./state-invariants.mjs";
+import { legacyWishIcon } from "./wish-icons.mjs";
 
 /** Versioned, local-only persistence boundary for 一两步. */
 export const DATA_CONTRACT_VERSION = 2;
-export const PRODUCT_VERSION = "5.1.2";
+export const PRODUCT_VERSION = "5.1.3";
 export const STORAGE_KEY = "ylb.v5.state";
 
 const STAGES = ["s1", "s2", "s3", "s4", "s5", "s6"];
@@ -46,26 +47,49 @@ export function normalizeState(input, { strict = false } = {}) {
 export function createStorageAdapter({ storage = globalThis.localStorage, key = STORAGE_KEY } = {}) {
   let status = { ok: true, error: "" };
   let lastPersisted = emptyState();
+  let lastRaw = null;
+  const conflict = (currentRaw) => {
+    try {
+      lastPersisted = clone(normalizeState(currentRaw ? JSON.parse(currentRaw) : null));
+      lastRaw = currentRaw;
+    } catch { /* Keep the last valid snapshot when an external value is itself invalid. */ }
+    status = { ok: false, error: "storage-conflict" };
+    return { state: clone(lastPersisted), ...status };
+  };
   return {
     read() {
-      try { const raw = storage?.getItem(key); lastPersisted = clone(normalizeState(raw ? JSON.parse(raw) : null)); status = { ok: true, error: "" }; return clone(lastPersisted); }
+      try { const raw = storage?.getItem(key) ?? null; lastRaw = raw; lastPersisted = clone(normalizeState(raw ? JSON.parse(raw) : null)); status = { ok: true, error: "" }; return clone(lastPersisted); }
       catch (error) { lastPersisted = emptyState(); status = { ok: false, error: error?.message || "read-failed" }; return clone(lastPersisted); }
     },
     write(value) {
       try {
         const state = normalizeState(value);
-        if (!storage?.setItem) throw new Error("storage-unavailable");
-        storage.setItem(key, JSON.stringify(state));
+        if (!storage?.setItem || !storage?.getItem) throw new Error("storage-unavailable");
+        const currentRaw = storage.getItem(key) ?? null;
+        if (currentRaw !== lastRaw) return conflict(currentRaw);
+        const serialized = JSON.stringify(state);
+        storage.setItem(key, serialized);
+        if ((storage.getItem(key) ?? null) !== serialized) throw new Error("write-verification-failed");
         lastPersisted = clone(state);
+        lastRaw = serialized;
         status = { ok: true, error: "" };
         return { state: clone(lastPersisted), ...status };
       } catch (error) { status = { ok: false, error: error?.message || "write-failed" }; }
       return { state: clone(lastPersisted), ...status };
     },
     clear() {
-      try { storage?.removeItem(key); status = { ok: true, error: "" }; }
+      try {
+        if (!storage?.removeItem || !storage?.getItem) throw new Error("storage-unavailable");
+        const currentRaw = storage.getItem(key) ?? null;
+        if (currentRaw !== lastRaw) return conflict(currentRaw);
+        storage.removeItem(key);
+        if (storage.getItem(key) !== null) throw new Error("clear-verification-failed");
+        lastPersisted = emptyState();
+        lastRaw = null;
+        status = { ok: true, error: "" };
+      }
       catch (error) { status = { ok: false, error: error?.message || "clear-failed" }; }
-      return status;
+      return { state: clone(lastPersisted), ...status };
     },
     status: () => ({ ...status }),
   };
@@ -76,14 +100,18 @@ function clone(value) { return globalThis.structuredClone ? structuredClone(valu
 function migrateV1(source) {
   const output = { ...emptyState(), ...source, schemaVersion: 2, version: PRODUCT_VERSION };
   output.entitlement = stripCredentials(source.entitlement);
+  output.children = (Array.isArray(source.children) ? source.children : []).map((item) => ({
+    ...item,
+    createdAt: isoInstant(item.createdAt) || (safeDate(item.birthDate) ? `${safeDate(item.birthDate)}T12:00:00.000Z` : ""),
+  }));
   output.agreements = (Array.isArray(source.agreements) ? source.agreements : []).map((item) => {
     const stageId = stageFrom(item);
     const status = item.status === "completed" ? "reviewed" : (item.status || "active");
-    const legacyReviewedAt = isoInstant(item.reviewedAt || item.completedAt || (item.endDate ? `${item.endDate}T12:00:00.000Z` : ""));
+    const legacyReviewedAt = isoInstant(item.reviewedAt || item.completedAt || (item.endDate ? `${nextDate(item.endDate)}T12:00:00.000Z` : ""));
     const review = status === "reviewed" && !item.review
       ? { outcome: "change", outcomeLabel: "旧版已完成约定", outcomeIcon: "↗", reviewedAt: legacyReviewedAt }
       : item.review;
-    return { ...item, stageId, templateId: cleanText(item.templateId || item.problemId, 80), templateVersion: Number(item.templateVersion) || 1, recordMode: item.recordMode === "once-per-cycle" || ["s5", "s6"].includes(stageId) ? "once-per-cycle" : "daily", status, review };
+    return { ...item, stageId, templateId: cleanText(item.templateId || item.problemId, 80), templateVersion: Number(item.templateVersion) || 1, recordMode: item.recordMode === "once-per-cycle" || ["s5", "s6"].includes(stageId) ? "once-per-cycle" : "daily", status, review, createdAt: isoInstant(item.createdAt) || (safeDate(item.startDate) ? `${safeDate(item.startDate)}T00:00:00.000Z` : "") };
   });
   const agreements = new Map(output.agreements.map((item) => [String(item.id), item]));
   output.records = {};
@@ -111,7 +139,7 @@ function migrateV1(source) {
     activeWishChildren.add(agreement.childId);
     const wishId = `m1:wish:${agreement.id}`;
     agreement.wishId = wishId;
-    output.wishes.push({ id: wishId, childId: agreement.childId, title: agreement.wishTitle, icon: agreement.wishIcon || "✨", cost: Number(agreement.wishCost) || 0, status: "active", createdAt: agreement.createdAt || "", scheduledDate: "", completedAt: "", cancelledAt: "" });
+    output.wishes.push({ id: wishId, childId: agreement.childId, title: agreement.wishTitle, icon: legacyWishIcon(agreement.wishIcon), cost: Number(agreement.wishCost) || 0, status: "active", createdAt: agreement.createdAt || "", scheduledDate: "", completedAt: "", cancelledAt: "" });
   }
   for (const redemption of Array.isArray(source.redemptions) ? source.redemptions : []) {
     const agreement = agreements.get(String(redemption.agreementId));
@@ -119,7 +147,7 @@ function migrateV1(source) {
     const wishId = `m1:wish:redeemed:${redemption.id || agreement.id}`;
     const completedAt = safeDate(redemption.date) || agreement.endDate || agreement.startDate;
     const cost = safeNumber(redemption.cost, 0, 999, Number(agreement.wishCost) || 0);
-    output.wishes.push({ id: wishId, childId: agreement.childId, title: cleanText(redemption.title || agreement.wishTitle, 30), icon: cleanText(redemption.icon || agreement.wishIcon || "✨", 12), cost, status: "completed", createdAt: agreement.createdAt || "", scheduledDate: completedAt, completedAt: `${completedAt}T12:00:00.000Z`, cancelledAt: "" });
+    output.wishes.push({ id: wishId, childId: agreement.childId, title: cleanText(redemption.title || agreement.wishTitle, 30), icon: legacyWishIcon(redemption.icon || agreement.wishIcon), cost, status: "completed", createdAt: agreement.createdAt || "", scheduledDate: completedAt, completedAt: `${completedAt}T12:00:00.000Z`, cancelledAt: "" });
     output.fruitTransactions.push({ id: `m1:spend:${wishId}`, childId: agreement.childId, agreementId: agreement.id, recordId: "", wishId, type: "wish-spend", amount: -cost, createdAt: `${completedAt || "1970-01-01"}T12:00:00.000Z`, reversedTransactionId: "" });
   }
   output.fruitTransactions = dedupe(output.fruitTransactions);
@@ -195,6 +223,7 @@ function safeNumber(value, min, max, fallback) { const result = Number(value); r
 function enumValue(value, values, fallback) { return values.includes(value) ? value : fallback; }
 function httpUrl(value) { const result = cleanText(value, 2000); if (!result) return ""; try { const url = new URL(result); return ["http:", "https:"].includes(url.protocol) ? url.href : ""; } catch { return ""; } }
 function isoInstant(value) { const text = cleanText(value, 80); if (!text) return ""; const date = new Date(text); return Number.isNaN(date.getTime()) ? "" : date.toISOString(); }
+function nextDate(value) { const date = safeDate(value); if (!date) return ""; const [year, month, day] = date.split("-").map(Number); return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10); }
 
 function assertStrictV2Preserved(source, normalized) {
   if (Number(source.schemaVersion) < 2) return;

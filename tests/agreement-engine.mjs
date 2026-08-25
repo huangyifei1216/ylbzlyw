@@ -7,6 +7,7 @@ import {
 const all = { scope: "all", stageId: "all", status: "active" };
 const stage4 = { scope: "stage", stageId: "s4", status: "active" };
 const now = "2026-08-25T04:00:00.000Z";
+const afterCycle = "2026-09-01T04:00:00.000Z";
 const draft = {
   id: "agreement-a", childId: "child-a", stageId: "s4", templateId: "s4-homework", templateVersion: 1,
   problem: "写作业总要一直催", childAction: "到约定时间先坐下来做10分钟", parentAction: "这10分钟我不催、不批评、不翻旧账",
@@ -42,12 +43,13 @@ assert.equal(canFinishExistingAgreement(due), true);
 assert.throws(() => reviewAgreement(created.agreement, "continue", { reviewedAt: now }), error("not-reviewable"));
 
 for (const outcome of ["continue", "adjust", "change"]) {
-  const reviewed = reviewAgreement(due, outcome, { reviewedAt: now });
+  const reviewed = reviewAgreement(due, outcome, { reviewedAt: afterCycle });
   assert.equal(reviewed.status, "reviewed");
   assert.equal(reviewed.review.outcome, outcome);
   assert.equal(archiveAgreement(reviewed).status, "archived");
 }
-const paused = reviewAgreement(due, "pause", { reviewedAt: now });
+assert.throws(() => reviewAgreement(due, "continue", { reviewedAt: now }), error("review-before-cycle-end"));
+const paused = reviewAgreement(due, "pause", { reviewedAt: afterCycle });
 assert.equal(paused.status, "paused");
 assert.equal(paused.review.outcome, "pause");
 

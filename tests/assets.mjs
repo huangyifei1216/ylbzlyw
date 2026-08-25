@@ -30,5 +30,6 @@ const pagesConfig = await readFile(new URL("../_config.yml", import.meta.url), "
 assert.match(pagesConfig, /^\s*- design-source$/m, "GitHub Pages must exclude high-resolution design sources");
 assert.match(pagesConfig, /^\s*- tests$/m, "GitHub Pages must exclude test sources");
 assert.match(pagesConfig, /^\s*- demo-access\.mjs$/m, "GitHub Pages must exclude local demo credentials");
+assert.match(pagesConfig, /^\s*- scripts$/m, "GitHub Pages must exclude build tooling");
 
 console.log(`Asset checks passed: 9 independent WebP files, 5 distinct growth hashes, ${(total / 1024).toFixed(1)}KB total, no character-sheet production reference.`);

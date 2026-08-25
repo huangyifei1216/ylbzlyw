@@ -10,7 +10,7 @@ const agreement = {
 };
 const record = { id: "record-a", childId: child.id, agreementId: agreement.id, role: "child", periodKey: "2026-08-25", localDate: "2026-08-25", recordedAt: "2026-08-25T04:00:00.000Z", reversedAt: "" };
 const step = { id: "fruit-a", childId: child.id, agreementId: agreement.id, recordId: record.id, wishId: "", type: "child-step", amount: 1, createdAt: record.recordedAt, reversedTransactionId: "", periodKey: record.periodKey, relatedRecordIds: [record.id] };
-const base = () => ({ schemaVersion: 2, version: "5.1.2", entitlement: null, children: [structuredClone(child)], currentChildId: child.id, agreements: [structuredClone(agreement)], records: { [record.id]: structuredClone(record) }, fruitTransactions: [structuredClone(step)], wishes: [], petPeaks: { [child.id]: 1 }, settings: { handbookUrl: "" }, bridgeSeen: false, demo: false });
+const base = () => ({ schemaVersion: 2, version: "5.1.3", entitlement: null, children: [structuredClone(child)], currentChildId: child.id, agreements: [structuredClone(agreement)], records: { [record.id]: structuredClone(record) }, fruitTransactions: [structuredClone(step)], wishes: [], petPeaks: { [child.id]: 1 }, settings: { handbookUrl: "" }, bridgeSeen: false, demo: false });
 
 assert.doesNotThrow(() => assertStateInvariants(base()));
 assert.doesNotThrow(() => assertStateInvariants(base(), { today: "2026-08-28" }), "runtime home refresh may temporarily own an overdue active agreement");
@@ -93,7 +93,80 @@ const scheduledWithoutSpend = base();
 scheduledWithoutSpend.wishes = [{ ...wish("wish-a", 1), status: "scheduled" }];
 assert.throws(() => assertStateInvariants(scheduledWithoutSpend), error("wish-spend-status-mismatch"));
 
+const invalidIcon = base();
+invalidIcon.wishes = [{ ...wish("wish-a"), icon: "<style>/*" }];
+assert.throws(() => assertStateInvariants(invalidIcon), error("invalid-wish-icon"));
+
+const invalidOutcome = reviewedBase("continue");
+invalidOutcome.agreements[0].review.outcome = "anything";
+assert.throws(() => assertStateInvariants(invalidOutcome), error("invalid-review-outcome"));
+
+const pausedContinue = reviewedBase("continue", "paused");
+assert.throws(() => assertStateInvariants(pausedContinue), error("review-status-mismatch"));
+const reviewedPause = reviewedBase("pause", "reviewed");
+assert.throws(() => assertStateInvariants(reviewedPause), error("review-status-mismatch"));
+const beforeCycleEnd = reviewedBase("continue");
+beforeCycleEnd.agreements[0].review.reviewedAt = "2026-08-27T04:00:00.000Z";
+assert.throws(() => assertStateInvariants(beforeCycleEnd), error("review-before-cycle-end"));
+
+for (const [field, code] of [["child", "invalid-child-created-at"], ["agreement", "invalid-agreement-created-at"], ["wish", "invalid-wish-created-at"]]) {
+  const candidate = base();
+  if (field === "child") candidate.children[0].createdAt = "bad";
+  if (field === "agreement") candidate.agreements[0].createdAt = "bad";
+  if (field === "wish") { candidate.wishes = [wish("wish-a")]; candidate.wishes[0].createdAt = "bad"; }
+  assert.throws(() => assertStateInvariants(candidate), error(code));
+}
+
+const wrongLocalDate = base();
+wrongLocalDate.records[record.id].recordedAt = "2026-08-24T15:00:00.000Z";
+wrongLocalDate.fruitTransactions[0].createdAt = wrongLocalDate.records[record.id].recordedAt;
+assert.throws(() => assertStateInvariants(wrongLocalDate), error("record-local-date-mismatch"));
+
+const wrongStepTime = base();
+wrongStepTime.fruitTransactions[0].createdAt = "2026-08-25T05:00:00.000Z";
+assert.throws(() => assertStateInvariants(wrongStepTime), error("step-time-mismatch"));
+
+const historicalNegative = base();
+historicalNegative.wishes = [{ ...wish("wish-a", 1), status: "scheduled" }];
+historicalNegative.fruitTransactions.unshift({ id: "spend-early", childId: child.id, agreementId: "", recordId: "", wishId: "wish-a", type: "wish-spend", amount: -1, createdAt: "2026-08-25T03:00:00.000Z", reversedTransactionId: "", periodKey: "", relatedRecordIds: [] });
+assert.throws(() => assertStateInvariants(historicalNegative), error("negative-fruit-balance"));
+
+const companionBeforeRecords = pairState();
+companionBeforeRecords.fruitTransactions.push({ id: "companion-a", childId: child.id, agreementId: agreement.id, recordId: "record-parent", wishId: "", type: "companion", amount: 1, createdAt: "2026-08-25T03:59:59.000Z", reversedTransactionId: "", periodKey: record.periodKey, relatedRecordIds: [record.id, "record-parent"] });
+companionBeforeRecords.petPeaks[child.id] = 3;
+assert.throws(() => assertStateInvariants(companionBeforeRecords), error("companion-before-records"));
+
+const spendBeforeWish = base();
+spendBeforeWish.wishes = [{ ...wish("wish-a", 1), status: "scheduled", createdAt: "2026-08-25T06:00:00.000Z" }];
+spendBeforeWish.fruitTransactions.push({ id: "spend-before-wish", childId: child.id, agreementId: "", recordId: "", wishId: "wish-a", type: "wish-spend", amount: -1, createdAt: "2026-08-25T05:00:00.000Z", reversedTransactionId: "", periodKey: "", relatedRecordIds: [] });
+assert.throws(() => assertStateInvariants(spendBeforeWish), error("wish-spend-before-created"));
+
+const cancelledBeforeRefund = base();
+cancelledBeforeRefund.wishes = [{ ...wish("wish-a", 1), status: "cancelled", cancelledAt: "2026-08-25T05:30:00.000Z" }];
+const cancelledSpend = { id: "cancelled-spend", childId: child.id, agreementId: "", recordId: "", wishId: "wish-a", type: "wish-spend", amount: -1, createdAt: "2026-08-25T05:00:00.000Z", reversedTransactionId: "", periodKey: "", relatedRecordIds: [] };
+cancelledBeforeRefund.fruitTransactions.push(cancelledSpend, { ...cancelledSpend, id: "late-refund", type: "wish-refund", amount: 1, createdAt: "2026-08-25T06:00:00.000Z", reversedTransactionId: cancelledSpend.id });
+assert.throws(() => assertStateInvariants(cancelledBeforeRefund), error("wish-transaction-after-cancel"));
+
+const validReversedPair = reversedPairState();
+assert.doesNotThrow(() => assertStateInvariants(validReversedPair));
+const orphanedCompanionReversal = structuredClone(validReversedPair);
+orphanedCompanionReversal.fruitTransactions.find((item) => item.id === "reverse-companion").recordId = "record-parent";
+assert.throws(() => assertStateInvariants(orphanedCompanionReversal), error("companion-reversal-mismatch"));
+
 console.log("State invariant checks passed: exclusivity, references, dates, live records, ledger signs, balances, and refunds.");
 
-function wish(id, cost = 3) { return { id, childId: child.id, title: "一起散步", icon: "", cost, status: "active", createdAt: "2026-08-25T00:00:00.000Z", scheduledDate: "", completedAt: "", cancelledAt: "" }; }
+function wish(id, cost = 3) { return { id, childId: child.id, title: "一起散步", icon: "✨", cost, status: "active", createdAt: "2026-08-25T00:00:00.000Z", scheduledDate: "", completedAt: "", cancelledAt: "" }; }
+function reviewedBase(outcome, status = "reviewed") { const candidate = base(); candidate.agreements[0].status = status; candidate.agreements[0].review = { outcome, outcomeLabel: "回顾结果", outcomeIcon: "↻", reviewedAt: "2026-08-28T04:00:00.000Z" }; return candidate; }
+function pairState() { const candidate = base(); const parent = { ...record, id: "record-parent", role: "parent" }; candidate.records[parent.id] = parent; candidate.fruitTransactions.push({ ...step, id: "fruit-parent", recordId: parent.id, type: "parent-step", relatedRecordIds: [parent.id] }); candidate.petPeaks[child.id] = 2; return candidate; }
+function reversedPairState() {
+  const candidate = pairState();
+  candidate.fruitTransactions.push({ id: "companion-valid", childId: child.id, agreementId: agreement.id, recordId: "record-parent", wishId: "", type: "companion", amount: 1, createdAt: record.recordedAt, reversedTransactionId: "", periodKey: record.periodKey, relatedRecordIds: [record.id, "record-parent"] });
+  candidate.records[record.id].reversedAt = "2026-08-25T05:00:00.000Z";
+  candidate.fruitTransactions.push(
+    { id: "reverse-step", childId: child.id, agreementId: agreement.id, recordId: record.id, wishId: "", type: "record-reversal", amount: -1, createdAt: candidate.records[record.id].reversedAt, reversedTransactionId: step.id, periodKey: record.periodKey, relatedRecordIds: [record.id] },
+    { id: "reverse-companion", childId: child.id, agreementId: agreement.id, recordId: record.id, wishId: "", type: "record-reversal", amount: -1, createdAt: candidate.records[record.id].reversedAt, reversedTransactionId: "companion-valid", periodKey: record.periodKey, relatedRecordIds: [record.id, "record-parent"] },
+  );
+  candidate.petPeaks[child.id] = 3;
+  return candidate;
+}
 function error(code) { return (caught) => caught instanceof StateInvariantError && caught.code === code; }

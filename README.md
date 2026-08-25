@@ -8,35 +8,31 @@
 npm run serve
 ```
 
-打开 [http://127.0.0.1:4173/](http://127.0.0.1:4173/)。
+打开 [http://127.0.0.1:4173/](http://127.0.0.1:4173/)。开发测试需显式注入 development 配置；默认公开模式为 production fail-closed。
 
-## Dev 预览
+## Dev 预览与源码
 
 - 在线预览：[ylbzlyw dev](https://huangyifei1216.github.io/ylbzlyw/)
 - GitHub 源码：[dev 分支](https://github.com/huangyifei1216/ylbzlyw/tree/dev)
-- GPT Pro 完整阅读入口：[GPT-PRO-REVIEW-INDEX.md](./GPT-PRO-REVIEW-INDEX.md)
+- GPT Pro 阅读入口：[GPT-PRO-REVIEW-INDEX.md](./GPT-PRO-REVIEW-INDEX.md)
 
-完整演示可直接点击开通页的“先看看完整演示”。测试码包括：
-
-- `BB-ALL-0001`：0—18 岁全龄版
-- `BB-S1-0001` 至 `BB-S6-0001`：六个单阶段版本
-
-## 测试
+## 验证与生产白名单构建
 
 ```bash
 npm test
+npm run build:production
 npm run test:e2e
 npm run verify
 ```
 
-## 当前边界
+`build:production` 生成 `dist/`，只含 26 个允许上线的运行文件；不会复制测试码模块、PRD、测试、审查资料、截图或设计源图。
 
-这是可完整体验的本地 H5，数据默认保存在浏览器 localStorage。用户可导出/导入只包含家庭数据的 JSON 备份；备份不包含或恢复开通权益。真实订单审批、云同步、跨设备自动恢复、正式支付与 IMA API 仍需要生产后端，页面没有暗示这些能力已经上线。
+## 当前能力与边界
 
 核心流程：孩子建档 → 选择具体问题 → 家庭约定 → 双方行动 → 象果 → 步步成长／家庭心愿 → 周期回顾。
 
-V5.1.1 采用独立领域引擎与状态不变量：daily／once-per-cycle 记录、撤回后重记、1＋1＋1 象果、心愿安排/取消安排/放下/实现、V1→V2 数据迁移、敏感问题边界和严格本地备份均有自动测试。
+V5.1.3 包含 V2 数据合同、严格跨对象与时间线不变量、历史逐笔非负象果账本、事务型本地写入/清空、两标签页同步与冲突保护、固定心愿图标白名单、严格家庭备份、敏感问题边界、青少年模式和九张 1024×1024 透明步步 WebP。
 
-当前验收包含 9 组 Node 测试与 17 条 Playwright 移动端流程，CI 使用 Node 22；关键页面截图保存在 [`artifacts/screenshots/`](./artifacts/screenshots/)。步步使用九张 1024×1024 透明 WebP，五阶段语义和图片均独立，页面不再绘制临时 SVG。
+当前验收包含 9 组 Node 测试与 24 条 Playwright 移动端流程，覆盖 375×667、390×844、430×932、恶意备份注入、清空失败/成功刷新、多页面同步和生产隔离。关键截图保存在 `artifacts/screenshots/`。
 
-产品规则和验收条件见 [PRD.md](./PRD.md)。
+真实订单审批、支付、登录、云同步、跨设备自动恢复和正式 IMA API 仍需生产后端，当前页面不会暗示这些能力已经上线。产品规则见 [PRD.md](./PRD.md)。

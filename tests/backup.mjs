@@ -34,7 +34,7 @@ const source = normalizeState({
     { id: "fruit-b", childId: childB.id, agreementId: agreementB.id, recordId: recordB.id, wishId: "", type: "parent-step", amount: 1, createdAt: NOW.toISOString(), reversedTransactionId: "", periodKey: recordB.periodKey, relatedRecordIds: [recordB.id] },
     { id: "spend-a", childId: childA.id, agreementId: "", recordId: "", wishId: "wish-a", type: "wish-spend", amount: -1, createdAt: NOW.toISOString(), reversedTransactionId: "", periodKey: "", relatedRecordIds: [] },
   ],
-  wishes: [{ id: "wish-a", childId: childA.id, title: "一起散步", icon: "🐘", cost: 1, status: "completed", createdAt: NOW.toISOString(), scheduledDate: "2026-08-25", completedAt: NOW.toISOString(), cancelledAt: "" }],
+  wishes: [{ id: "wish-a", childId: childA.id, title: "一起散步", icon: "✨", cost: 1, status: "completed", createdAt: NOW.toISOString(), scheduledDate: "2026-08-25", completedAt: NOW.toISOString(), cancelledAt: "" }],
   petPeaks: { [childA.id]: 1, [childB.id]: 1 },
   settings: { handbookUrl: "https://current.example/handbook" }, bridgeSeen: true,
 });
@@ -100,7 +100,7 @@ assert.equal(importedStage.entitlement.stageId, "s3");
 
 // 9. Child count and unauthorized stages fail explicitly, with no truncation.
 const fourChildren = structuredClone(envelope);
-fourChildren.data.children.push({ id: "child-c", nickname: "小明", birthDate: "2021-01-01", createdAt: "" }, { id: "child-d", nickname: "小红", birthDate: "2022-01-01", createdAt: "" });
+fourChildren.data.children.push({ id: "child-c", nickname: "小明", birthDate: "2021-01-01", createdAt: NOW.toISOString() }, { id: "child-d", nickname: "小红", birthDate: "2022-01-01", createdAt: NOW.toISOString() });
 assert.throws(() => prepareBackupImport(current, fourChildren, { now: NOW }), error("child-limit"));
 assert.throws(() => prepareBackupImport(stageCurrent, json, { now: NOW }), error("child-limit"));
 const wrongStage = createFamilyBackup(normalizeState({ ...source, children: [childB], currentChildId: childB.id, agreements: [agreementB], records: { [recordB.id]: recordB }, fruitTransactions: source.fruitTransactions.filter((item) => item.childId === childB.id), wishes: [], petPeaks: { [childB.id]: 1 } }), { now: NOW });
@@ -128,6 +128,11 @@ assert.deepEqual(current, beforeRejectedImport, "rejected imports must leave loc
 const invalidAmount = structuredClone(envelope);
 invalidAmount.data.fruitTransactions[0].amount = 999;
 assert.throws(() => parseFamilyBackup(invalidAmount), error("invalid-family-state"));
+
+const injectedWish = structuredClone(envelope);
+injectedWish.data.wishes[0].icon = "<style>/*";
+injectedWish.data.wishes[0].title = "*/body{display:none}";
+assert.throws(() => parseFamilyBackup(injectedWish), error("invalid-family-state"));
 
 function error(code) {
   return (caught) => caught instanceof BackupValidationError && caught.code === code;
