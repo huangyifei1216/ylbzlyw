@@ -30,8 +30,9 @@ const source = normalizeState({
   children: [childA, childB], currentChildId: childB.id,
   agreements: [agreementA, agreementB], records: { [recordA.id]: recordA, [recordB.id]: recordB },
   fruitTransactions: [
-    { id: "fruit-a", childId: childA.id, agreementId: agreementA.id, recordId: recordA.id, wishId: "", type: "child-step", amount: 1, createdAt: NOW.toISOString(), reversedTransactionId: "" },
-    { id: "fruit-b", childId: childB.id, agreementId: agreementB.id, recordId: recordB.id, wishId: "", type: "parent-step", amount: 1, createdAt: NOW.toISOString(), reversedTransactionId: "" },
+    { id: "fruit-a", childId: childA.id, agreementId: agreementA.id, recordId: recordA.id, wishId: "", type: "child-step", amount: 1, createdAt: NOW.toISOString(), reversedTransactionId: "", periodKey: recordA.periodKey, relatedRecordIds: [recordA.id] },
+    { id: "fruit-b", childId: childB.id, agreementId: agreementB.id, recordId: recordB.id, wishId: "", type: "parent-step", amount: 1, createdAt: NOW.toISOString(), reversedTransactionId: "", periodKey: recordB.periodKey, relatedRecordIds: [recordB.id] },
+    { id: "spend-a", childId: childA.id, agreementId: "", recordId: "", wishId: "wish-a", type: "wish-spend", amount: -1, createdAt: NOW.toISOString(), reversedTransactionId: "", periodKey: "", relatedRecordIds: [] },
   ],
   wishes: [{ id: "wish-a", childId: childA.id, title: "一起散步", icon: "🐘", cost: 1, status: "completed", createdAt: NOW.toISOString(), scheduledDate: "2026-08-25", completedAt: NOW.toISOString(), cancelledAt: "" }],
   petPeaks: { [childA.id]: 1, [childB.id]: 1 },
@@ -91,7 +92,7 @@ assert.deepEqual(current, immutableBefore);
 const malicious = structuredClone(envelope);
 malicious.data.entitlement = { scope: "all", stageId: "all", status: "active", recoveryCode: "STOLEN" };
 const stageCurrent = normalizeState({ schemaVersion: 2, entitlement: { scope: "stage", stageId: "s3", label: "3—6岁", status: "active" } });
-const onlyA = createFamilyBackup(normalizeState({ ...source, children: [childA], currentChildId: childA.id, agreements: [agreementA], records: { [recordA.id]: recordA }, fruitTransactions: source.fruitTransactions.slice(0, 1), wishes: source.wishes, petPeaks: { [childA.id]: 1 } }), { now: NOW });
+const onlyA = createFamilyBackup(normalizeState({ ...source, children: [childA], currentChildId: childA.id, agreements: [agreementA], records: { [recordA.id]: recordA }, fruitTransactions: source.fruitTransactions.filter((item) => item.childId === childA.id), wishes: source.wishes, petPeaks: { [childA.id]: 1 } }), { now: NOW });
 onlyA.data.entitlement = malicious.data.entitlement;
 const importedStage = importFamilyBackup(stageCurrent, onlyA, { confirmed: true, now: NOW }).state;
 assert.equal(importedStage.entitlement.scope, "stage");
@@ -102,13 +103,13 @@ const fourChildren = structuredClone(envelope);
 fourChildren.data.children.push({ id: "child-c", nickname: "小明", birthDate: "2021-01-01", createdAt: "" }, { id: "child-d", nickname: "小红", birthDate: "2022-01-01", createdAt: "" });
 assert.throws(() => prepareBackupImport(current, fourChildren, { now: NOW }), error("child-limit"));
 assert.throws(() => prepareBackupImport(stageCurrent, json, { now: NOW }), error("child-limit"));
-const wrongStage = createFamilyBackup(normalizeState({ ...source, children: [childB], currentChildId: childB.id, agreements: [agreementB], records: { [recordB.id]: recordB }, fruitTransactions: source.fruitTransactions.slice(1), wishes: [], petPeaks: { [childB.id]: 1 } }), { now: NOW });
+const wrongStage = createFamilyBackup(normalizeState({ ...source, children: [childB], currentChildId: childB.id, agreements: [agreementB], records: { [recordB.id]: recordB }, fruitTransactions: source.fruitTransactions.filter((item) => item.childId === childB.id), wishes: [], petPeaks: { [childB.id]: 1 } }), { now: NOW });
 assert.throws(() => prepareBackupImport(stageCurrent, wrongStage, { now: NOW }), error("stage-not-entitled"));
 
 // 10. Multi-child records, transactions and wallet ownership remain isolated.
 assert.equal(imported.records[recordA.id].childId, childA.id);
 assert.equal(imported.records[recordB.id].childId, childB.id);
-assert.equal(imported.fruitTransactions.filter((item) => item.childId === childA.id).length, 1);
+assert.equal(imported.fruitTransactions.filter((item) => item.childId === childA.id).length, 2);
 assert.equal(imported.fruitTransactions.filter((item) => item.childId === childB.id).length, 1);
 
 // Structural failures are rejected rather than silently repaired/truncated.

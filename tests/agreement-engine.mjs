@@ -21,6 +21,7 @@ assert.equal(created.agreements.length, 1);
 assert.throws(() => createAgreement([], { ...draft, duration: 4 }, { currentStageId: "s4", entitlement: all, now }), error("invalid-duration"));
 assert.throws(() => createAgreement([], { ...draft, duration: 5 }, { currentStageId: "s4", entitlement: all, now }), error("invalid-duration"));
 assert.throws(() => createAgreement([], { ...draft, duration: 6 }, { currentStageId: "s4", entitlement: all, now }), error("invalid-duration"));
+assert.throws(() => createAgreement([], { ...draft, recordMode: "once-per-cycle" }, { currentStageId: "s4", entitlement: all, now }), error("stage-record-mode-mismatch"));
 assert.throws(() => createAgreement(created.agreements, { ...draft, id: "agreement-b" }, { currentStageId: "s4", entitlement: all, now }), error("agreement-in-progress"));
 assert.throws(() => archiveAgreement(created.agreement), error("review-before-archive"));
 
@@ -38,6 +39,7 @@ assert.equal(canFinishExistingAgreement(created.agreement), true);
 const due = markReviewDue(created.agreement, "2026-09-01");
 assert.equal(due.status, "review-due");
 assert.equal(canFinishExistingAgreement(due), true);
+assert.throws(() => reviewAgreement(created.agreement, "continue", { reviewedAt: now }), error("not-reviewable"));
 
 for (const outcome of ["continue", "adjust", "change"]) {
   const reviewed = reviewAgreement(due, outcome, { reviewedAt: now });

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { AGREEMENT_PRESETS, FAMILY_WISHES, PET_STAGES, presetsForStage } from "../agreements.mjs";
-import { APP_VERSION, STAGES, childLimit, getAgeInfo, hasStageAccess, validateCode } from "../core.mjs";
+import { APP_VERSION, STAGES, childLimit, getAgeInfo, hasStageAccess } from "../core.mjs";
+import { validateDemoCode } from "../demo-access.mjs";
 
-assert.equal(APP_VERSION, "5.1.1");
+assert.equal(APP_VERSION, "5.1.2");
 assert.equal(STAGES.length, 6);
 assert.equal(Object.values(AGREEMENT_PRESETS).flat().length, 22);
 assert.ok(STAGES.every((stage) => presetsForStage(stage.id).length >= 3));
@@ -11,7 +12,7 @@ assert.ok(Object.values(AGREEMENT_PRESETS).flat().every((item) => item.stageId &
 assert.ok(FAMILY_WISHES.length >= 5);
 assert.equal(PET_STAGES.length, 5);
 
-const all = validateCode("bb-all-0001");
+const all = validateDemoCode("bb-all-0001");
 assert.equal(all.ok, true);
 assert.equal(childLimit(all.entitlement), 3);
 assert.equal(hasStageAccess(all.entitlement, "s6"), true);
@@ -29,4 +30,4 @@ for (const phrase of ["建立家庭约定", "孩子这一步", "家长这一步"
 for (const banned of ["从IMA答案创建约定", "找回我的家庭空间", "订单号后四位", "recoveryCode", "积分商城", "排行榜", "连续打卡", "失败了", "香果", "布布"]) assert.doesNotMatch(app, new RegExp(banned));
 assert.match(app, /assets\/bubu-/);
 
-console.log("Smoke checks passed: V5.1.1 access, reviewed templates, real Bubu assets, mutual actions, wishes, backup, and safety routes.");
+console.log("Smoke checks passed: V5.1.2 access, reviewed templates, real Bubu assets, mutual actions, wishes, backup, and safety routes.");

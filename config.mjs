@@ -3,7 +3,7 @@ const runtime = globalThis.__YLB_CONFIG__ && typeof globalThis.__YLB_CONFIG__ ==
   : {};
 
 export const APP_CONFIG = Object.freeze({
-  environment: runtime.environment === "production" ? "production" : "development",
+  environment: runtime.environment === "development" ? "development" : "production",
   handbookUrl: validHttpUrl(runtime.handbookUrl || ""),
 });
 

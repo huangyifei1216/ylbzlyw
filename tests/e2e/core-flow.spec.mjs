@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => { window.__YLB_CONFIG__ = { environment: "development", handbookUrl: "" }; });
+});
+
 async function activateAndCreate(page, { nickname = "菲菲", birthDate = "2020-08-24" } = {}) {
   await page.goto("/");
   await page.getByLabel("开通码").fill("BB-ALL-0001");
@@ -129,9 +133,17 @@ test("12—18岁整轮只记录一次，刷新后不重复领取", async ({ page
 test("正式模式隐藏演示入口和测试码", async ({ page }) => {
   await page.addInitScript(() => { window.__YLB_CONFIG__ = { environment: "production", handbookUrl: "" }; });
   await page.goto("/");
-  await expect(page.getByText("当前为内测版本，请使用项目方提供的内测开通方式。")).toBeVisible();
+  await expect(page.getByText(/公开预览不会接受本地测试码/)).toBeVisible();
   await expect(page.locator(".demo-entry")).toHaveCount(0);
   await expect(page.getByText("开发测试开通码")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "进入内测版" })).toBeVisible();
+  await page.getByLabel("开通码").fill("BB-ALL-0001");
+  await page.getByRole("button", { name: "进入内测版" }).click();
+  await expect(page.getByRole("alert")).toContainText("不接受本地测试码");
+  await page.goto("/?code=BB-ALL-0001");
+  await expect(page.getByText(/公开预览不会接受本地测试码/)).toBeVisible();
+  await page.evaluate(() => localStorage.setItem("ylb.v5.state", JSON.stringify({ schemaVersion: 2, entitlement: { scope: "all", stageId: "all", label: "伪造权益", status: "active" } })));
+  await page.reload();
   await expect(page.getByRole("button", { name: "进入内测版" })).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/production-activation-390x844.png", fullPage: true });
 });
@@ -352,6 +364,7 @@ test("心愿安排不等于实现，只有真实实现后才进入家庭回忆",
         { id: `e2e-fruit-${index}-companion`, childId: agreement.childId, agreementId: agreement.id, recordId: parentRecordId, wishId: "", type: "companion", amount: 1, createdAt, reversedTransactionId: "", periodKey: localDate, relatedRecordIds: [childRecordId, parentRecordId] },
       );
     }
+    state.petPeaks[agreement.childId] = 9;
     localStorage.setItem("ylb.v5.state", JSON.stringify(state));
   });
   await page.reload();
@@ -374,4 +387,40 @@ test("心愿安排不等于实现，只有真实实现后才进入家庭回忆",
   await page.locator('.bottom-nav button[data-view="pet"]').click();
   await expect(page.getByText("一起选一部全家电影", { exact: true })).toBeVisible();
   await page.screenshot({ path: "artifacts/screenshots/wish-completed-memory-390x844.png", fullPage: true });
+});
+
+test("本地保存失败时撤回界面操作且刷新后不制造假成功", async ({ page }) => {
+  await activateAndCreate(page);
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    window.__failFamilyWrites = true;
+    Storage.prototype.setItem = function patched(key, value) {
+      if (window.__failFamilyWrites && key === "ylb.v5.state") throw new Error("quota-test");
+      return original.call(this, key, value);
+    };
+  });
+  await page.getByRole("button", { name: /记录菲菲这一步/ }).click();
+  await expect(page.getByRole("alert")).toContainText("无法稳定保存");
+  await expect(page.getByRole("button", { name: /记录菲菲这一步/ })).toBeVisible();
+  expect(await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("ylb.v5.state")).records).length)).toBe(0);
+  await page.reload();
+  await expect(page.getByRole("button", { name: /记录菲菲这一步/ })).toBeVisible();
+});
+
+test("进行中的约定不能通过直达链接提前回顾", async ({ page }) => {
+  await activateAndCreate(page);
+  await page.goto("/#/review");
+  await expect(page.getByRole("heading", { name: "现在没有需要回顾的约定" })).toBeVisible();
+  await expect(page.locator("[data-action='finish-review']")).toHaveCount(0);
+});
+
+test("手册弹窗被浏览器拦截时提供当前页可点击降级入口", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__YLB_CONFIG__ = { environment: "development", handbookUrl: "https://handbook.example/path" };
+    window.open = () => null;
+  });
+  await activateAndCreate(page);
+  await page.getByRole("button", { name: "方法需要调整？" }).click();
+  await expect(page.getByRole("heading", { name: "新窗口没有打开" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "在当前页面打开分龄手册" })).toHaveAttribute("href", "https://handbook.example/path");
 });

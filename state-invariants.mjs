@@ -36,6 +36,8 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
     reference(childMap, agreement.childId, "agreement-child-not-found", "约定引用的孩子不存在。");
     if (!STAGES.has(agreement.stageId)) fail("invalid-stage", "约定年龄阶段无效。");
     if (!RECORD_MODES.has(agreement.recordMode)) fail("invalid-record-mode", "约定记录方式无效。");
+    const expectedMode = ["s5", "s6"].includes(agreement.stageId) ? "once-per-cycle" : "daily";
+    if (agreement.recordMode !== expectedMode) fail("stage-record-mode-mismatch", "约定记录方式与年龄阶段不一致。");
     if (!AGREEMENT_STATUSES.has(agreement.status)) fail("invalid-agreement-status", "约定状态无效。");
     if (![3, 7].includes(agreement.duration)) fail("invalid-duration", "约定周期只能是3天或7天。");
     localDate(agreement.startDate, "invalid-agreement-date", "约定开始日期无效。");
@@ -46,8 +48,9 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
     required(agreement.problem, "missing-agreement-problem", "约定问题不能为空。");
     required(agreement.childAction, "missing-child-action", "孩子这一步不能为空。");
     required(agreement.parentAction, "missing-parent-action", "家长这一步不能为空。");
-    if (agreement.status === "reviewed") validReview(agreement.review);
-    if (agreement.review) validReview(agreement.review);
+    if (["active", "review-due"].includes(agreement.status) && agreement.review) fail("unexpected-review", "进行中的约定不能提前写入回顾结果。");
+    if (["reviewed", "paused"].includes(agreement.status)) validReview(agreement.review);
+    else if (agreement.review) validReview(agreement.review);
     if (!allowRuntimeReviewRefresh && today && agreement.status === "active" && today > agreement.endDate) {
       fail("overdue-active-agreement", "已过期约定必须先进入回顾状态。");
     }
@@ -113,8 +116,8 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
     if (item.wishId) {
       const wish = reference(wishMap, item.wishId, "transaction-wish-not-found", "象果流水引用的家庭心愿不存在。");
       if (wish.childId !== item.childId) fail("transaction-wish-child-mismatch", "象果流水与家庭心愿不属于同一个孩子。");
+      if (item.type === "wish-spend" && item.amount !== -wish.cost) fail("wish-spend-amount-mismatch", "家庭心愿支出金额与象果目标不一致。");
     }
-    if (item.type === "companion") validateCompanionReferences(item, records, recordMap);
   });
 
   const reversedOriginals = new Set();
@@ -122,29 +125,91 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
     const original = reference(transactionMap, item.reversedTransactionId, "reversal-target-not-found", "撤回或退款引用的原流水不存在。");
     if (reversedOriginals.has(original.id)) fail("duplicate-reversal", "同一笔原流水不能重复撤回或退款。");
     reversedOriginals.add(original.id);
-    if (item.type === "record-reversal" && !["child-step", "parent-step", "companion"].includes(original.type)) fail("invalid-record-reversal-target", "记录撤回引用了错误的原流水。");
+    if (item.type === "record-reversal") {
+      if (!["child-step", "parent-step", "companion"].includes(original.type)) fail("invalid-record-reversal-target", "记录撤回引用了错误的原流水。");
+      if (item.amount !== -Math.abs(original.amount)) fail("record-reversal-mismatch", "记录撤回金额与原流水不一致。");
+      if (item.childId !== original.childId || item.agreementId !== original.agreementId || item.periodKey !== original.periodKey) fail("record-reversal-mismatch", "记录撤回与原流水不属于同一周期。");
+      if (new Date(item.createdAt) < new Date(original.createdAt)) fail("reversal-before-transaction", "撤回流水不能早于原流水。");
+    }
     if (item.type === "wish-refund") {
       if (original.type !== "wish-spend") fail("invalid-wish-refund-target", "心愿退款引用了错误的原流水。");
       if (item.amount !== Math.abs(original.amount)) fail("wish-refund-mismatch", "心愿退款金额与原支出不一致。");
+      if (item.childId !== original.childId || item.wishId !== original.wishId) fail("wish-refund-mismatch", "心愿退款与原支出不属于同一个家庭心愿。");
+      if (new Date(item.createdAt) < new Date(original.createdAt)) fail("refund-before-spend", "心愿退款不能早于原支出。");
     }
   }
+
+  validateRecordLedger(records, transactions, reversedOriginals);
+  validateCompanionLedger(records, transactions, reversedOriginals, recordMap);
 
   for (const wish of wishes) {
     const spends = transactions.filter((item) => item.type === "wish-spend" && item.wishId === wish.id);
     const liveSpends = spends.filter((spend) => !reversedOriginals.has(spend.id));
-    if (wish.status === "scheduled" && liveSpends.length !== 1) fail("scheduled-wish-spend-mismatch", "已安排心愿必须对应一笔有效象果支出。");
-    if (wish.status === "completed" && transactions.some((item) => item.type === "wish-refund" && item.wishId === wish.id && item.createdAt >= wish.completedAt)) {
-      fail("completed-wish-refunded", "已经实现的家庭心愿不能退款。");
-    }
+    const expectedLive = ["scheduled", "completed"].includes(wish.status) ? 1 : 0;
+    if (liveSpends.length !== expectedLive) fail("wish-spend-status-mismatch", "家庭心愿状态与有效象果支出不一致。");
+    if (wish.status === "completed" && new Date(wish.completedAt) < new Date(liveSpends[0].createdAt)) fail("wish-completed-before-spend", "家庭心愿实现时间不能早于有效支出。");
   }
 
   const balances = new Map(children.map((child) => [child.id, 0]));
   for (const item of transactions) balances.set(item.childId, (balances.get(item.childId) || 0) + item.amount);
   for (const balance of balances.values()) if (balance < 0) fail("negative-fruit-balance", "任意孩子的可用象果都不能小于0。");
+  validatePetPeaks(children, transactions, record(source.petPeaks));
   return state;
 }
 
-function validateCompanionReferences(item, records, recordMap) {
+function validateRecordLedger(records, transactions, reversedOriginals) {
+  for (const item of records) {
+    const expectedType = `${item.role}-step`;
+    const steps = transactions.filter((tx) => tx.type === expectedType && tx.recordId === item.id);
+    if (steps.length !== 1) fail("record-step-cardinality", "每条双方记录必须且只能对应一笔行动象果。");
+    const step = steps[0];
+    if (step.childId !== item.childId || step.agreementId !== item.agreementId || step.periodKey !== item.periodKey
+      || step.relatedRecordIds?.length !== 1 || step.relatedRecordIds[0] !== item.id) fail("record-step-mismatch", "双方记录与行动象果字段不一致。");
+    const reversed = reversedOriginals.has(step.id);
+    if (Boolean(item.reversedAt) !== reversed) fail("record-reversal-status-mismatch", "双方记录撤回状态与象果流水不一致。");
+    if (reversed) {
+      const reversal = transactions.find((tx) => tx.type === "record-reversal" && tx.reversedTransactionId === step.id);
+      if (!reversal || reversal.recordId !== item.id || reversal.createdAt !== item.reversedAt) fail("record-reversal-mismatch", "双方记录与撤回流水不一致。");
+    }
+  }
+}
+
+function validateCompanionLedger(records, transactions, reversedOriginals, recordMap) {
+  const liveRecords = records.filter((item) => !item.reversedAt);
+  const periods = new Map();
+  for (const item of liveRecords) {
+    const key = `${item.agreementId}\u0000${item.periodKey}`;
+    if (!periods.has(key)) periods.set(key, []);
+    periods.get(key).push(item);
+  }
+  const liveCompanions = transactions.filter((item) => item.type === "companion" && !reversedOriginals.has(item.id));
+  for (const item of liveCompanions) validateCompanionReferences(item, liveRecords, recordMap, true);
+  for (const [key, related] of periods) {
+    const [agreementId, periodKey] = key.split("\u0000");
+    const hasBoth = new Set(related.map((item) => item.role)).size === 2;
+    const companions = liveCompanions.filter((item) => item.agreementId === agreementId && item.periodKey === periodKey);
+    if (companions.length !== (hasBoth ? 1 : 0)) fail("companion-cardinality", "同一周期的同行象果数量与双方有效记录不一致。");
+  }
+  for (const item of transactions.filter((tx) => tx.type === "companion" && reversedOriginals.has(tx.id))) {
+    const reversal = transactions.find((tx) => tx.type === "record-reversal" && tx.reversedTransactionId === item.id);
+    if (!reversal || !item.relatedRecordIds?.includes(reversal.recordId)) fail("companion-reversal-mismatch", "同行象果撤回没有对应相关双方记录。");
+  }
+}
+
+function validatePetPeaks(children, transactions, peaks) {
+  for (const child of children) {
+    const peak = peaks[child.id] ?? 0;
+    if (!Number.isInteger(peak) || peak < 0) fail("invalid-pet-peak", "步步成长峰值必须是非负整数。");
+    let running = 0; let historicalMax = 0;
+    for (const item of transactions.filter((tx) => tx.childId === child.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+      if (["child-step", "parent-step", "companion", "record-reversal"].includes(item.type)) running += item.amount;
+      historicalMax = Math.max(historicalMax, running);
+    }
+    if (peak < historicalMax) fail("pet-peak-too-low", "步步成长峰值低于历史已达到的象果数量。");
+  }
+}
+
+function validateCompanionReferences(item, records, recordMap, requireLive = false) {
   let ids = array(item.relatedRecordIds);
   if (!ids.length) {
     const periodKey = item.periodKey || legacyCompanionPeriod(item);
@@ -152,7 +217,7 @@ function validateCompanionReferences(item, records, recordMap) {
   }
   const related = ids.map((id) => reference(recordMap, id, "transaction-record-not-found", "同行象果引用的双方记录不存在。"));
   if (related.length !== 2 || new Set(related.map((recordItem) => recordItem.role)).size !== 2
-    || related.some((recordItem) => recordItem.agreementId !== item.agreementId || recordItem.childId !== item.childId || recordItem.periodKey !== related[0].periodKey)) {
+    || related.some((recordItem) => recordItem.agreementId !== item.agreementId || recordItem.childId !== item.childId || recordItem.periodKey !== item.periodKey || (requireLive && recordItem.reversedAt))) {
     fail("invalid-companion-records", "同行象果必须引用同一周期内孩子和家长的两条有效记录。");
   }
 }

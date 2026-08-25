@@ -2,7 +2,7 @@ import { assertStateInvariants } from "./state-invariants.mjs";
 
 /** Versioned, local-only persistence boundary for 一两步. */
 export const DATA_CONTRACT_VERSION = 2;
-export const PRODUCT_VERSION = "5.1.1";
+export const PRODUCT_VERSION = "5.1.2";
 export const STORAGE_KEY = "ylb.v5.state";
 
 const STAGES = ["s1", "s2", "s3", "s4", "s5", "s6"];
@@ -45,20 +45,22 @@ export function normalizeState(input, { strict = false } = {}) {
 
 export function createStorageAdapter({ storage = globalThis.localStorage, key = STORAGE_KEY } = {}) {
   let status = { ok: true, error: "" };
+  let lastPersisted = emptyState();
   return {
     read() {
-      try { const raw = storage?.getItem(key); status = { ok: true, error: "" }; return normalizeState(raw ? JSON.parse(raw) : null); }
-      catch (error) { status = { ok: false, error: error?.message || "read-failed" }; return emptyState(); }
+      try { const raw = storage?.getItem(key); lastPersisted = clone(normalizeState(raw ? JSON.parse(raw) : null)); status = { ok: true, error: "" }; return clone(lastPersisted); }
+      catch (error) { lastPersisted = emptyState(); status = { ok: false, error: error?.message || "read-failed" }; return clone(lastPersisted); }
     },
     write(value) {
-      let state = value;
       try {
-        state = normalizeState(value);
+        const state = normalizeState(value);
         if (!storage?.setItem) throw new Error("storage-unavailable");
         storage.setItem(key, JSON.stringify(state));
+        lastPersisted = clone(state);
         status = { ok: true, error: "" };
+        return { state: clone(lastPersisted), ...status };
       } catch (error) { status = { ok: false, error: error?.message || "write-failed" }; }
-      return { state, ...status };
+      return { state: clone(lastPersisted), ...status };
     },
     clear() {
       try { storage?.removeItem(key); status = { ok: true, error: "" }; }
@@ -68,6 +70,8 @@ export function createStorageAdapter({ storage = globalThis.localStorage, key = 
     status: () => ({ ...status }),
   };
 }
+
+function clone(value) { return globalThis.structuredClone ? structuredClone(value) : JSON.parse(JSON.stringify(value)); }
 
 function migrateV1(source) {
   const output = { ...emptyState(), ...source, schemaVersion: 2, version: PRODUCT_VERSION };
@@ -194,25 +198,20 @@ function isoInstant(value) { const text = cleanText(value, 80); if (!text) retur
 
 function assertStrictV2Preserved(source, normalized) {
   if (Number(source.schemaVersion) < 2) return;
-  const checks = [
-    [Array.isArray(source.children) ? source.children.length : -1, normalized.children.length, "孩子档案"],
-    [Array.isArray(source.agreements) ? source.agreements.length : -1, normalized.agreements.length, "约定"],
-    [source.records && typeof source.records === "object" && !Array.isArray(source.records) ? Object.keys(source.records).length : -1, Object.keys(normalized.records).length, "双方记录"],
-    [Array.isArray(source.fruitTransactions) ? source.fruitTransactions.length : -1, normalized.fruitTransactions.length, "象果流水"],
-    [Array.isArray(source.wishes) ? source.wishes.length : -1, normalized.wishes.length, "家庭心愿"],
-  ];
-  for (const [before, after, label] of checks) if (before < 0 || before !== after) throw new Error(`${label}包含无法识别或重复的数据。`);
-  if (source.currentChildId && source.currentChildId !== normalized.currentChildId) throw new Error("当前孩子引用无效。");
-  for (let index = 0; index < source.agreements.length; index += 1) {
-    const raw = object(source.agreements[index]); const clean = normalized.agreements[index];
-    if (Number(raw.duration) !== clean.duration || raw.status !== clean.status || (raw.startDate && raw.startDate !== clean.startDate) || (raw.endDate && raw.endDate !== clean.endDate)) throw new Error("约定包含被静默修正的非法字段。");
+  const keys = ["children", "currentChildId", "agreements", "records", "fruitTransactions", "wishes", "petPeaks"];
+  const raw = Object.fromEntries(keys.map((key) => [key, clone(source[key])]));
+  const clean = Object.fromEntries(keys.map((key) => [key, clone(normalized[key])]));
+  for (const agreement of Array.isArray(raw.agreements) ? raw.agreements : []) {
+    if (agreement?.review?.date && !agreement.review.reviewedAt) {
+      agreement.review.reviewedAt = `${agreement.review.date}T12:00:00.000Z`;
+      delete agreement.review.date;
+    }
   }
-  for (let index = 0; index < source.fruitTransactions.length; index += 1) {
-    const raw = object(source.fruitTransactions[index]); const clean = normalized.fruitTransactions[index];
-    if (!Number.isInteger(raw.amount) || raw.amount !== clean.amount || raw.type !== clean.type || (raw.createdAt && clean.createdAt !== new Date(raw.createdAt).toISOString())) throw new Error("象果流水包含被静默修正的非法字段。");
-  }
-  for (let index = 0; index < source.wishes.length; index += 1) {
-    const raw = object(source.wishes[index]); const clean = normalized.wishes[index];
-    if (!Number.isInteger(raw.cost) || raw.cost !== clean.cost || raw.status !== clean.status) throw new Error("家庭心愿包含被静默修正的非法字段。");
-  }
+  if (canonical(raw) !== canonical(clean)) throw new Error("V2家庭数据包含会被截断、补写或静默修正的字段。");
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
 }

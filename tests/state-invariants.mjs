@@ -10,7 +10,7 @@ const agreement = {
 };
 const record = { id: "record-a", childId: child.id, agreementId: agreement.id, role: "child", periodKey: "2026-08-25", localDate: "2026-08-25", recordedAt: "2026-08-25T04:00:00.000Z", reversedAt: "" };
 const step = { id: "fruit-a", childId: child.id, agreementId: agreement.id, recordId: record.id, wishId: "", type: "child-step", amount: 1, createdAt: record.recordedAt, reversedTransactionId: "", periodKey: record.periodKey, relatedRecordIds: [record.id] };
-const base = () => ({ schemaVersion: 2, version: "5.1.1", entitlement: null, children: [structuredClone(child)], currentChildId: child.id, agreements: [structuredClone(agreement)], records: { [record.id]: structuredClone(record) }, fruitTransactions: [structuredClone(step)], wishes: [], petPeaks: { [child.id]: 1 }, settings: { handbookUrl: "" }, bridgeSeen: false, demo: false });
+const base = () => ({ schemaVersion: 2, version: "5.1.2", entitlement: null, children: [structuredClone(child)], currentChildId: child.id, agreements: [structuredClone(agreement)], records: { [record.id]: structuredClone(record) }, fruitTransactions: [structuredClone(step)], wishes: [], petPeaks: { [child.id]: 1 }, settings: { handbookUrl: "" }, bridgeSeen: false, demo: false });
 
 assert.doesNotThrow(() => assertStateInvariants(base()));
 assert.doesNotThrow(() => assertStateInvariants(base(), { today: "2026-08-28" }), "runtime home refresh may temporarily own an overdue active agreement");
@@ -50,6 +50,7 @@ assert.throws(() => assertStateInvariants(duplicateRecord), error("duplicate-liv
 
 const negative = base();
 negative.wishes = [wish("wish-a", 2)];
+negative.wishes[0].status = "scheduled";
 negative.fruitTransactions.push({ id: "spend-a", childId: child.id, agreementId: "", recordId: "", wishId: "wish-a", type: "wish-spend", amount: -2, createdAt: "2026-08-25T05:00:00.000Z", reversedTransactionId: "", periodKey: "", relatedRecordIds: [] });
 assert.throws(() => assertStateInvariants(negative), error("negative-fruit-balance"));
 
@@ -60,6 +61,37 @@ duplicateRefund.fruitTransactions.push(spend,
   { ...spend, id: "refund-a", type: "wish-refund", amount: 1, createdAt: "2026-08-25T06:00:00.000Z", reversedTransactionId: spend.id },
   { ...spend, id: "refund-b", type: "wish-refund", amount: 1, createdAt: "2026-08-25T07:00:00.000Z", reversedTransactionId: spend.id });
 assert.throws(() => assertStateInvariants(duplicateRefund), error("duplicate-reversal"));
+
+const wrongMode = base();
+wrongMode.agreements[0].recordMode = "once-per-cycle";
+assert.throws(() => assertStateInvariants(wrongMode), error("stage-record-mode-mismatch"));
+
+const earlyReview = base();
+earlyReview.agreements[0].review = { outcome: "continue", outcomeLabel: "再试一轮", outcomeIcon: "↻", reviewedAt: "2026-08-25T05:00:00.000Z" };
+assert.throws(() => assertStateInvariants(earlyReview), error("unexpected-review"));
+
+const missingStep = base();
+missingStep.fruitTransactions = [];
+assert.throws(() => assertStateInvariants(missingStep), error("record-step-cardinality"));
+
+const wrongStepPeriod = base();
+wrongStepPeriod.fruitTransactions[0].periodKey = "2026-08-26";
+assert.throws(() => assertStateInvariants(wrongStepPeriod), error("record-step-mismatch"));
+
+const pairWithoutCompanion = base();
+const parentRecord = { ...record, id: "record-parent", role: "parent" };
+pairWithoutCompanion.records[parentRecord.id] = parentRecord;
+pairWithoutCompanion.fruitTransactions.push({ ...step, id: "fruit-parent", recordId: parentRecord.id, type: "parent-step", relatedRecordIds: [parentRecord.id] });
+pairWithoutCompanion.petPeaks[child.id] = 2;
+assert.throws(() => assertStateInvariants(pairWithoutCompanion), error("companion-cardinality"));
+
+const lowPeak = base();
+lowPeak.petPeaks[child.id] = 0;
+assert.throws(() => assertStateInvariants(lowPeak), error("pet-peak-too-low"));
+
+const scheduledWithoutSpend = base();
+scheduledWithoutSpend.wishes = [{ ...wish("wish-a", 1), status: "scheduled" }];
+assert.throws(() => assertStateInvariants(scheduledWithoutSpend), error("wish-spend-status-mismatch"));
 
 console.log("State invariant checks passed: exclusivity, references, dates, live records, ledger signs, balances, and refunds.");
 

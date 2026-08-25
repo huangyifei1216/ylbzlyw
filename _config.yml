@@ -16,3 +16,4 @@ exclude:
   - README.md
   - V5.1.1-RELEASE-EVIDENCE.md
   - project-control.md
+  - demo-access.mjs

@@ -50,6 +50,8 @@ export function createAgreement(agreements, draft, context = {}) {
   if (!RECORD_MODES.includes(input.recordMode)) {
     throw new DomainRuleError("invalid-record-mode", "记录方式只能是每天一次或每轮一次。");
   }
+  const expectedMode = ["s5", "s6"].includes(stageId) ? "once-per-cycle" : "daily";
+  if (input.recordMode !== expectedMode) throw new DomainRuleError("stage-record-mode-mismatch", "记录方式与当前年龄阶段不一致。");
   const startDate = input.startDate || localDateFromInstant(context.now || new Date());
   assertLocalDate(startDate, "startDate");
   const endDate = addDays(startDate, duration - 1);
@@ -89,8 +91,8 @@ export function markReviewDue(agreement, localDate) {
 
 export function reviewAgreement(agreement, outcome, { reviewedAt = new Date() } = {}) {
   const current = cloneAgreement(agreement);
-  if (!IN_PROGRESS_STATUSES.includes(current.status)) {
-    throw new DomainRuleError("not-reviewable", "这条约定现在不能重复回顾。");
+  if (current.status !== "review-due") {
+    throw new DomainRuleError("not-reviewable", "这一轮尚未结束，现在不能回顾。");
   }
   if (!REVIEW_OUTCOMES.includes(outcome)) {
     throw new DomainRuleError("invalid-review", "请选择一个回顾方向。");

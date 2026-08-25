@@ -3,7 +3,7 @@ import { DATA_CONTRACT_VERSION, PRODUCT_VERSION, STORAGE_KEY, createStorageAdapt
 import { StateInvariantError } from "../state-invariants.mjs";
 
 assert.equal(DATA_CONTRACT_VERSION, 2);
-assert.equal(PRODUCT_VERSION, "5.1.1");
+assert.equal(PRODUCT_VERSION, "5.1.2");
 assert.equal(STORAGE_KEY, "ylb.v5.state");
 assert.deepEqual(Object.keys(emptyState()), ["schemaVersion", "version", "entitlement", "children", "currentChildId", "agreements", "records", "fruitTransactions", "wishes", "petPeaks", "settings", "bridgeSeen", "demo"]);
 
@@ -12,7 +12,7 @@ const agreement = { id: "agreement-a", childId: child.id, problemId: "s3-morning
 const v1 = { schemaVersion: 1, entitlement: { scope: "all", stageId: "all", label: "全龄", status: "active", recoveryCode: "SECRET" }, children: [child], currentChildId: child.id, agreements: [agreement], checkins: { "agreement-a:2026-08-24": { agreementId: agreement.id, childId: child.id, date: "2026-08-24", child: true, parent: true } }, redemptions: [], petPeaks: { [child.id]: 3 } };
 const migrated = normalizeState(v1);
 assert.equal(migrated.schemaVersion, 2);
-assert.equal(migrated.version, "5.1.1");
+assert.equal(migrated.version, "5.1.2");
 assert.equal("recoveryCode" in migrated.entitlement, false);
 assert.equal(migrated.agreements[0].stageId, "s3");
 assert.equal(migrated.agreements[0].recordMode, "daily");
@@ -45,8 +45,25 @@ assert.equal(storage.clear().ok, true);
 const locked = createStorageAdapter({ storage: { getItem: () => null, setItem: () => { throw new Error("quota"); }, removeItem: () => { throw new Error("locked"); } } });
 const failed = locked.write(migrated);
 assert.equal(failed.ok, false);
-assert.equal(failed.state.children.length, 1);
+assert.equal(failed.state.children.length, 0, "failed writes must roll back to the last persisted snapshot");
 assert.match(failed.error, /quota/);
 assert.equal(locked.clear().ok, false);
+
+let rejectWrites = false;
+const rollbackBacking = new Map();
+const rollbackStorage = createStorageAdapter({ storage: { getItem: (key) => rollbackBacking.get(key) ?? null, setItem: (key, value) => { if (rejectWrites) throw new Error("quota"); rollbackBacking.set(key, value); }, removeItem() {} } });
+assert.equal(rollbackStorage.write(migrated).ok, true);
+rejectWrites = true;
+const rolledBack = rollbackStorage.write({ ...migrated, children: [{ ...migrated.children[0], nickname: "不应保留" }] });
+assert.equal(rolledBack.ok, false);
+assert.equal(rolledBack.state.children[0].nickname, migrated.children[0].nickname);
+assert.equal(JSON.parse(rollbackBacking.get(STORAGE_KEY)).children[0].nickname, migrated.children[0].nickname);
+
+const truncatedV2 = structuredClone(migrated);
+truncatedV2.agreements[0].problem = "很".repeat(501);
+assert.throws(() => normalizeState(truncatedV2, { strict: true }), /静默修正/);
+const fractionalPeak = structuredClone(migrated);
+fractionalPeak.petPeaks[child.id] = 1.5;
+assert.throws(() => normalizeState(fractionalPeak, { strict: true }));
 
 console.log("Data contract checks passed: V2 shape, reviewedAt migration, invalid-local isolation, idempotent V1 migration, credential stripping, and storage failure status.");

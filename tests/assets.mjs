@@ -25,8 +25,10 @@ const productionFiles = ["index.html", "app.js", "styles.css", "styles-brand.css
 const productionText = (await Promise.all(productionFiles.map((file) => readFile(new URL(`../${file}`, import.meta.url), "utf8")))).join("\n");
 assert.doesNotMatch(productionText, /bubu-character-sheet\.png/);
 assert.doesNotMatch(productionText, /assets\/bubu-[^"')]+\.png/);
+assert.doesNotMatch(productionText, /BB-(?:ALL|S[1-6]|USED)-\d{4}/, "production entry files must not contain local activation credentials");
 const pagesConfig = await readFile(new URL("../_config.yml", import.meta.url), "utf8");
 assert.match(pagesConfig, /^\s*- design-source$/m, "GitHub Pages must exclude high-resolution design sources");
 assert.match(pagesConfig, /^\s*- tests$/m, "GitHub Pages must exclude test sources");
+assert.match(pagesConfig, /^\s*- demo-access\.mjs$/m, "GitHub Pages must exclude local demo credentials");
 
 console.log(`Asset checks passed: 9 independent WebP files, 5 distinct growth hashes, ${(total / 1024).toFixed(1)}KB total, no character-sheet production reference.`);
