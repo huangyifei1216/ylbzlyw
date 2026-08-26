@@ -8,7 +8,7 @@
 npm run serve
 ```
 
-打开 [http://127.0.0.1:4173/](http://127.0.0.1:4173/)。本地服务器使用不进入生产包的 `dev.html`；开发测试需显式注入 development 配置，正式 `index.html` 默认为 production fail-closed。
+打开 [http://127.0.0.1:4173/](http://127.0.0.1:4173/)。本地服务器使用不进入生产包的 `dev.html`，并自动进入开发体验；正式 `index.html` 默认为 production fail-closed。不要直接双击 `dev.html`：浏览器会拦截本地模块，页面会明确提示你打开这个本地地址。
 
 ## Dev 预览与源码
 

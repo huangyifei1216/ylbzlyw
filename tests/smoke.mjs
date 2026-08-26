@@ -30,4 +30,9 @@ for (const phrase of ["建立家庭约定", "孩子这一步", "家长这一步"
 for (const banned of ["从IMA答案创建约定", "找回我的家庭空间", "订单号后四位", "recoveryCode", "积分商城", "排行榜", "连续打卡", "失败了", "香果", "布布"]) assert.doesNotMatch(app, new RegExp(banned));
 assert.match(app, /assets\/bubu-/);
 
+const devEntry = await readFile(new URL("../dev.html", import.meta.url), "utf8");
+assert.match(devEntry, /__YLB_CONFIG__ = \{ environment: "development", handbookUrl: "" \}/);
+assert.match(devEntry, /href="http:\/\/127\.0\.0\.1:4173\/"/);
+assert.match(devEntry, /location\.protocol === "file:"/);
+
 console.log("Smoke checks passed: V5.1.4 access, reviewed templates, real Bubu assets, mutual actions, wishes, backup, and safety routes.");
