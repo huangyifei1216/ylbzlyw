@@ -2,7 +2,7 @@
 
 ## 当前结论
 
-- 当前版本：V5.1.4 发布候选；等待最新 commit 的 CI、Pages 与 GPT Pro 独立复审，不提前标记 GO。
+- 当前版本：V5.1.4 发布候选；本地全量验证、同提交 CI 与生产白名单 Pages 已通过，等待 GPT Pro 独立复审，不提前标记正式 GO。
 - 产品逻辑：IMA 提供分龄方法，一两步承接“家庭约定—双方行动—象果—步步成长—家庭心愿—周期回顾”。
 - 本地验收：9 组 Node 测试、27 条移动端 E2E、26 文件生产白名单构建。
 
@@ -22,10 +22,15 @@
 - 九张透明 WebP 步步素材、三种移动尺寸、青少年低幼感降级。
 - production 默认 fail-closed，测试码独立模块不进入 26 文件生产白名单。
 
+## 已通过的发布证据
+
+- `dev` 源码已 push；GitHub Actions 完整执行 Node、生产构建与 27 条移动端 E2E。
+- Pages 已切换为 workflow 构建，只上传 `dist/`；线上 `dev.html`、`demo-access.mjs`、PRD 均为 404，生产 `app.js` 不含开发分支。
+- `GPT-PRO-REVIEW-INDEX.md` 已提供 26 个核心文件的精确行数与字节数。
+
 ## 发布前仍需
 
-- 最新源码 commit、push、GitHub Actions 与 Pages 同一提交验证。
-- 生成 V5.1.4 Pro 审阅 ZIP 与精确文件索引。
+- 从最终提交生成 V5.1.4 Pro 审阅 ZIP 与 GitHub Release 资产。
 - GPT Pro 对 V5.1.4 进行只读对抗式复审并关闭全部 P0/P1。
 
 ## 生产接入仍需

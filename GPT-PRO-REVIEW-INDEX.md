@@ -28,7 +28,7 @@
 | 22 | [.github/workflows/verify.yml](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/.github/workflows/verify.yml) | 49 | 1,063 | Node、构建和移动端 CI 闸门 |
 | 23 | [package.json](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/package.json) | 17 | 696 | 验证与构建命令合同 |
 | 24 | [README.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/README.md) | 38 | 2,105 | 运行、验证和能力边界 |
-| 25 | [project-control.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/project-control.md) | 37 | 2,229 | 当前发布闸门与外部依赖 |
+| 25 | [project-control.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/project-control.md) | 42 | 2,585 | 当前发布证据、闸门与外部依赖 |
 | 26 | [GPT-PRO-RETEST-V5.1.4.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/GPT-PRO-RETEST-V5.1.4.md) | 47 | 2,624 | 上轮 NO-GO 的逐项对抗复验任务 |
 
 ## 复审要求
