@@ -28,7 +28,9 @@
           </main>`;
       } else {
         // dev.html is deliberately outside the production publish allowlist.
-        globalThis.__YLB_CONFIG__ = { environment: "development", handbookUrl: "" };
+        globalThis.__YLB_CONFIG__ = globalThis.__YLB_CONFIG__ && typeof globalThis.__YLB_CONFIG__ === "object"
+          ? globalThis.__YLB_CONFIG__
+          : { environment: "development", handbookUrl: "" };
         const appModule = document.createElement("script");
         appModule.type = "module";
         appModule.textContent = 'globalThis.__YLB_DEMO_ACCESS__ = await import("./demo-access.mjs"); await import("./app.js");';

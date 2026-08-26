@@ -31,7 +31,8 @@ for (const banned of ["从IMA答案创建约定", "找回我的家庭空间", "�
 assert.match(app, /assets\/bubu-/);
 
 const devEntry = await readFile(new URL("../dev.html", import.meta.url), "utf8");
-assert.match(devEntry, /__YLB_CONFIG__ = \{ environment: "development", handbookUrl: "" \}/);
+assert.match(devEntry, /globalThis\.__YLB_CONFIG__ && typeof globalThis\.__YLB_CONFIG__ === "object"/);
+assert.match(devEntry, /\{ environment: "development", handbookUrl: "" \}/);
 assert.match(devEntry, /href="http:\/\/127\.0\.0\.1:4173\/"/);
 assert.match(devEntry, /location\.protocol === "file:"/);
 
