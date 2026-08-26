@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#29483A" />
+    <title>一两步｜开发体验</title>
+    <link rel="icon" href="./favicon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles-brand.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module">
+      if (globalThis.__YLB_CONFIG__?.environment === "development") {
+        globalThis.__YLB_DEMO_ACCESS__ = await import("./demo-access.mjs");
+      }
+      await import("./app.js");
+    </script>
+  </body>
+</html>

@@ -3,7 +3,7 @@ import { DATA_CONTRACT_VERSION, PRODUCT_VERSION, STORAGE_KEY, createStorageAdapt
 import { StateInvariantError } from "../state-invariants.mjs";
 
 assert.equal(DATA_CONTRACT_VERSION, 2);
-assert.equal(PRODUCT_VERSION, "5.1.3");
+assert.equal(PRODUCT_VERSION, "5.1.4");
 assert.equal(STORAGE_KEY, "ylb.v5.state");
 assert.deepEqual(Object.keys(emptyState()), ["schemaVersion", "version", "entitlement", "children", "currentChildId", "agreements", "records", "fruitTransactions", "wishes", "petPeaks", "settings", "bridgeSeen", "demo"]);
 
@@ -12,7 +12,7 @@ const agreement = { id: "agreement-a", childId: child.id, problemId: "s3-morning
 const v1 = { schemaVersion: 1, entitlement: { scope: "all", stageId: "all", label: "全龄", status: "active", recoveryCode: "SECRET" }, children: [child], currentChildId: child.id, agreements: [agreement], checkins: { "agreement-a:2026-08-24": { agreementId: agreement.id, childId: child.id, date: "2026-08-24", child: true, parent: true } }, redemptions: [], petPeaks: { [child.id]: 3 } };
 const migrated = normalizeState(v1);
 assert.equal(migrated.schemaVersion, 2);
-assert.equal(migrated.version, "5.1.3");
+assert.equal(migrated.version, "5.1.4");
 assert.match(migrated.children[0].createdAt, /^\d{4}-\d{2}-\d{2}T/);
 assert.match(migrated.agreements[0].createdAt, /^\d{4}-\d{2}-\d{2}T/);
 assert.equal("recoveryCode" in migrated.entitlement, false);
@@ -38,36 +38,36 @@ assert.equal(invalidReviewStorage.status().ok, false);
 
 const backing = new Map();
 const storage = createStorageAdapter({ storage: { getItem: (key) => backing.get(key) ?? null, setItem: (key, value) => backing.set(key, value), removeItem: (key) => backing.delete(key) } });
-const written = storage.write(migrated);
+const written = await storage.write(migrated);
 assert.equal(written.ok, true);
 assert.equal(written.state.schemaVersion, 2);
 assert.equal(storage.read().children.length, 1);
-const cleared = storage.clear();
+const cleared = await storage.clear();
 assert.equal(cleared.ok, true);
 assert.equal(cleared.state.children.length, 0);
 assert.equal(storage.read().children.length, 0);
 
 const locked = createStorageAdapter({ storage: { getItem: () => null, setItem: () => { throw new Error("quota"); }, removeItem: () => { throw new Error("locked"); } } });
-const failed = locked.write(migrated);
+const failed = await locked.write(migrated);
 assert.equal(failed.ok, false);
 assert.equal(failed.state.children.length, 0, "failed writes must roll back to the last persisted snapshot");
 assert.match(failed.error, /quota/);
-assert.equal(locked.clear().ok, false);
+assert.equal((await locked.clear()).ok, false);
 
 let rejectWrites = false;
 const rollbackBacking = new Map();
 const rollbackStorage = createStorageAdapter({ storage: { getItem: (key) => rollbackBacking.get(key) ?? null, setItem: (key, value) => { if (rejectWrites) throw new Error("quota"); rollbackBacking.set(key, value); }, removeItem: (key) => rollbackBacking.delete(key) } });
-assert.equal(rollbackStorage.write(migrated).ok, true);
+assert.equal((await rollbackStorage.write(migrated)).ok, true);
 rejectWrites = true;
-const rolledBack = rollbackStorage.write({ ...migrated, children: [{ ...migrated.children[0], nickname: "不应保留" }] });
+const rolledBack = await rollbackStorage.write({ ...migrated, children: [{ ...migrated.children[0], nickname: "不应保留" }] });
 assert.equal(rolledBack.ok, false);
 assert.equal(rolledBack.state.children[0].nickname, migrated.children[0].nickname);
 assert.equal(JSON.parse(rollbackBacking.get(STORAGE_KEY)).children[0].nickname, migrated.children[0].nickname);
 
 rejectWrites = false;
-assert.equal(rollbackStorage.clear().ok, true);
+assert.equal((await rollbackStorage.clear()).ok, true);
 rejectWrites = true;
-const afterClearFailure = rollbackStorage.write(migrated);
+const afterClearFailure = await rollbackStorage.write(migrated);
 assert.equal(afterClearFailure.ok, false);
 assert.equal(afterClearFailure.state.children.length, 0, "a failed write after a verified clear cannot resurrect the old family");
 assert.equal(rollbackBacking.has(STORAGE_KEY), false);
@@ -75,7 +75,7 @@ assert.equal(rollbackBacking.has(STORAGE_KEY), false);
 const clearFailureBacking = new Map([[STORAGE_KEY, JSON.stringify(migrated)]]);
 const clearFailureStorage = createStorageAdapter({ storage: { getItem: (key) => clearFailureBacking.get(key) ?? null, setItem: (key, value) => clearFailureBacking.set(key, value), removeItem: () => { throw new Error("locked"); } } });
 clearFailureStorage.read();
-const clearFailed = clearFailureStorage.clear();
+const clearFailed = await clearFailureStorage.clear();
 assert.equal(clearFailed.ok, false);
 assert.equal(clearFailed.state.children[0].nickname, migrated.children[0].nickname);
 assert.equal(clearFailureBacking.has(STORAGE_KEY), true);
@@ -84,11 +84,46 @@ const conflictBacking = new Map();
 const conflictStorage = createStorageAdapter({ storage: { getItem: (key) => conflictBacking.get(key) ?? null, setItem: (key, value) => conflictBacking.set(key, value), removeItem: (key) => conflictBacking.delete(key) } });
 conflictStorage.read();
 conflictBacking.set(STORAGE_KEY, JSON.stringify({ ...migrated, children: [{ ...migrated.children[0], nickname: "另一页面" }] }));
-const conflicted = conflictStorage.write(migrated);
+const conflicted = await conflictStorage.write(migrated);
 assert.equal(conflicted.ok, false);
 assert.equal(conflicted.error, "storage-conflict");
 assert.equal(conflicted.state.children[0].nickname, "另一页面", "a conflict returns the newer persisted family instead of the stale caller snapshot");
 assert.equal(JSON.parse(conflictBacking.get(STORAGE_KEY)).children[0].nickname, "另一页面");
+
+const concurrentBacking = new Map();
+const concurrentBackend = { getItem: (key) => concurrentBacking.get(key) ?? null, setItem: (key, value) => concurrentBacking.set(key, value), removeItem: (key) => concurrentBacking.delete(key) };
+const tabA = createStorageAdapter({ storage: concurrentBackend });
+const tabB = createStorageAdapter({ storage: concurrentBackend });
+tabA.read(); tabB.read();
+const stateA = { ...migrated, children: [{ ...migrated.children[0], nickname: "标签A" }] };
+const stateB = { ...migrated, children: [{ ...migrated.children[0], nickname: "标签B" }] };
+const [resultA, resultB] = await Promise.all([tabA.write(stateA), tabB.write(stateB)]);
+assert.equal([resultA.ok, resultB.ok].filter(Boolean).length, 1, "truly concurrent writers cannot both report success");
+assert.equal([resultA.error, resultB.error].includes("storage-conflict"), true);
+assert.equal(["标签A", "标签B"].includes(JSON.parse(concurrentBacking.get(STORAGE_KEY)).children[0].nickname), true);
+
+let writeGetCount = 0;
+const unknownWriteBacking = new Map();
+const unknownWrite = createStorageAdapter({ storage: {
+  getItem: (key) => { writeGetCount += 1; if (writeGetCount > 1) throw new Error("read-after-write-failed"); return unknownWriteBacking.get(key) ?? null; },
+  setItem: (key, value) => unknownWriteBacking.set(key, value), removeItem: (key) => unknownWriteBacking.delete(key),
+} });
+const unknownWriteResult = await unknownWrite.write(migrated);
+assert.equal(unknownWriteResult.ok, false);
+assert.equal(unknownWriteResult.error, "unknown-commit-state");
+assert.equal(unknownWriteBacking.has(STORAGE_KEY), true, "unknown means the mutation may have committed");
+
+let clearGetCount = 0;
+const unknownClearBacking = new Map([[STORAGE_KEY, JSON.stringify(migrated)]]);
+const unknownClear = createStorageAdapter({ storage: {
+  getItem: (key) => { clearGetCount += 1; if (clearGetCount > 2) throw new Error("read-after-clear-failed"); return unknownClearBacking.get(key) ?? null; },
+  setItem: (key, value) => unknownClearBacking.set(key, value), removeItem: (key) => unknownClearBacking.delete(key),
+} });
+unknownClear.read();
+const unknownClearResult = await unknownClear.clear();
+assert.equal(unknownClearResult.ok, false);
+assert.equal(unknownClearResult.error, "unknown-commit-state");
+assert.equal(unknownClearBacking.has(STORAGE_KEY), false, "unknown means the clear may have committed");
 
 const truncatedV2 = structuredClone(migrated);
 truncatedV2.agreements[0].problem = "很".repeat(501);

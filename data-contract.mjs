@@ -3,7 +3,7 @@ import { legacyWishIcon } from "./wish-icons.mjs";
 
 /** Versioned, local-only persistence boundary for 一两步. */
 export const DATA_CONTRACT_VERSION = 2;
-export const PRODUCT_VERSION = "5.1.3";
+export const PRODUCT_VERSION = "5.1.4";
 export const STORAGE_KEY = "ylb.v5.state";
 
 const STAGES = ["s1", "s2", "s3", "s4", "s5", "s6"];
@@ -44,7 +44,7 @@ export function normalizeState(input, { strict = false } = {}) {
   return output;
 }
 
-export function createStorageAdapter({ storage = globalThis.localStorage, key = STORAGE_KEY } = {}) {
+export function createStorageAdapter({ storage = globalThis.localStorage, key = STORAGE_KEY, runExclusive = defaultRunExclusive } = {}) {
   let status = { ok: true, error: "" };
   let lastPersisted = emptyState();
   let lastRaw = null;
@@ -61,38 +61,73 @@ export function createStorageAdapter({ storage = globalThis.localStorage, key = 
       try { const raw = storage?.getItem(key) ?? null; lastRaw = raw; lastPersisted = clone(normalizeState(raw ? JSON.parse(raw) : null)); status = { ok: true, error: "" }; return clone(lastPersisted); }
       catch (error) { lastPersisted = emptyState(); status = { ok: false, error: error?.message || "read-failed" }; return clone(lastPersisted); }
     },
-    write(value) {
+    async write(value) {
+      const expectedRaw = lastRaw;
+      let state;
+      try { state = normalizeState(value); }
+      catch (error) { status = { ok: false, error: error?.message || "invalid-state" }; return { state: clone(lastPersisted), ...status }; }
       try {
-        const state = normalizeState(value);
-        if (!storage?.setItem || !storage?.getItem) throw new Error("storage-unavailable");
-        const currentRaw = storage.getItem(key) ?? null;
-        if (currentRaw !== lastRaw) return conflict(currentRaw);
-        const serialized = JSON.stringify(state);
-        storage.setItem(key, serialized);
-        if ((storage.getItem(key) ?? null) !== serialized) throw new Error("write-verification-failed");
-        lastPersisted = clone(state);
-        lastRaw = serialized;
-        status = { ok: true, error: "" };
-        return { state: clone(lastPersisted), ...status };
+        return await runExclusive(`${key}:write`, () => {
+          if (!storage?.setItem || !storage?.getItem) throw new Error("storage-unavailable");
+          const currentRaw = storage.getItem(key) ?? null;
+          if (currentRaw !== expectedRaw) return conflict(currentRaw);
+          const serialized = JSON.stringify(state);
+          let mutationCompleted = false;
+          try {
+            storage.setItem(key, serialized);
+            mutationCompleted = true;
+            if ((storage.getItem(key) ?? null) !== serialized) throw new Error("write-verification-failed");
+          } catch (error) {
+            if (mutationCompleted) throw new Error("unknown-commit-state", { cause: error });
+            throw error;
+          }
+          lastPersisted = clone(state);
+          lastRaw = serialized;
+          status = { ok: true, error: "" };
+          return { state: clone(lastPersisted), ...status };
+        });
       } catch (error) { status = { ok: false, error: error?.message || "write-failed" }; }
       return { state: clone(lastPersisted), ...status };
     },
-    clear() {
+    async clear() {
+      const expectedRaw = lastRaw;
       try {
-        if (!storage?.removeItem || !storage?.getItem) throw new Error("storage-unavailable");
-        const currentRaw = storage.getItem(key) ?? null;
-        if (currentRaw !== lastRaw) return conflict(currentRaw);
-        storage.removeItem(key);
-        if (storage.getItem(key) !== null) throw new Error("clear-verification-failed");
-        lastPersisted = emptyState();
-        lastRaw = null;
-        status = { ok: true, error: "" };
+        return await runExclusive(`${key}:write`, () => {
+          if (!storage?.removeItem || !storage?.getItem) throw new Error("storage-unavailable");
+          const currentRaw = storage.getItem(key) ?? null;
+          if (currentRaw !== expectedRaw) return conflict(currentRaw);
+          let mutationCompleted = false;
+          try {
+            storage.removeItem(key);
+            mutationCompleted = true;
+            if (storage.getItem(key) !== null) throw new Error("clear-verification-failed");
+          } catch (error) {
+            if (mutationCompleted) throw new Error("unknown-commit-state", { cause: error });
+            throw error;
+          }
+          lastPersisted = emptyState();
+          lastRaw = null;
+          status = { ok: true, error: "" };
+          return { state: clone(lastPersisted), ...status };
+        });
       }
       catch (error) { status = { ok: false, error: error?.message || "clear-failed" }; }
       return { state: clone(lastPersisted), ...status };
     },
     status: () => ({ ...status }),
   };
+}
+
+const processQueues = new Map();
+function defaultRunExclusive(name, task) {
+  if (typeof window !== "undefined" && globalThis.navigator?.locks?.request) return navigator.locks.request(name, { mode: "exclusive" }, task);
+  if (typeof window !== "undefined") return Promise.reject(new Error("atomic-write-unavailable"));
+  const previous = processQueues.get(name) || Promise.resolve();
+  const current = previous.catch(() => {}).then(task);
+  const tail = current.then(() => {}, () => {});
+  processQueues.set(name, tail);
+  tail.finally(() => { if (processQueues.get(name) === tail) processQueues.delete(name); });
+  return current;
 }
 
 function clone(value) { return globalThis.structuredClone ? structuredClone(value) : JSON.parse(JSON.stringify(value)); }

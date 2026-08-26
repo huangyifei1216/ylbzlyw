@@ -1,4 +1,6 @@
 import { isAllowedWishIcon } from "./wish-icons.mjs";
+import { dateKeyInShanghai, getAgeInfo } from "./core.mjs";
+import { checkAgreementSafety } from "./safety.mjs";
 
 const STAGES = new Set(["s1", "s2", "s3", "s4", "s5", "s6"]);
 const AGREEMENT_STATUSES = new Set(["active", "review-due", "reviewed", "paused", "archived"]);
@@ -7,6 +9,7 @@ const ROLES = new Set(["child", "parent"]);
 const WISH_STATUSES = new Set(["active", "scheduled", "completed", "cancelled"]);
 const TRANSACTION_TYPES = new Set(["child-step", "parent-step", "companion", "wish-spend", "wish-refund", "record-reversal"]);
 const REVIEW_OUTCOMES = new Set(["continue", "adjust", "change", "pause"]);
+const REVERSAL_WINDOW_MS = 10 * 60 * 1000;
 
 export const RUNTIME_REVIEW_REFRESH_NOTE = "active 约定可能在非首页读取时短暂过期；首页运行时负责转成 review-due。";
 
@@ -27,9 +30,12 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
   const transactions = array(source.fruitTransactions);
   const wishes = array(source.wishes);
 
+  const effectiveToday = today || dateKeyInShanghai();
   const childMap = uniqueMap(children, "child", (child) => {
     required(child.nickname, "invalid-child-nickname", "孩子昵称不能为空。");
     localDate(child.birthDate, "invalid-child-birth-date", "孩子生日不是有效日期。");
+    if (child.birthDate < "1900-01-01") fail("implausible-child-birth-date", "孩子生日超出产品支持范围。");
+    if (child.birthDate > effectiveToday) fail("future-child-birth-date", "孩子生日不能晚于今天。");
     instant(child.createdAt, "invalid-child-created-at", "孩子档案创建时间无效。");
   });
   if (source.currentChildId && !childMap.has(source.currentChildId)) {
@@ -49,9 +55,13 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
     if (addDays(agreement.startDate, agreement.duration - 1) !== agreement.endDate) {
       fail("agreement-period-mismatch", "约定结束日期与周期不一致。");
     }
+    const child = childMap.get(agreement.childId);
+    const stageAtStart = getAgeInfo(child.birthDate, instantForShanghaiDate(agreement.startDate)).stage?.id || "";
+    if (stageAtStart !== agreement.stageId) fail("agreement-stage-age-mismatch", "约定年龄阶段与孩子在约定开始时的年龄不一致。");
     required(agreement.problem, "missing-agreement-problem", "约定问题不能为空。");
     required(agreement.childAction, "missing-child-action", "孩子这一步不能为空。");
     required(agreement.parentAction, "missing-parent-action", "家长这一步不能为空。");
+    if (checkAgreementSafety(agreement).blocked) fail("unsafe-agreement", "约定包含不适合转化为象果行动的医疗、危机或紧急安全内容。");
     const agreementCreatedAt = instant(agreement.createdAt, "invalid-agreement-created-at", "约定创建时间无效。");
     if (shanghaiDate(agreementCreatedAt) > agreement.startDate) fail("agreement-created-after-start", "约定创建时间不能晚于约定开始日期。");
     if (["active", "review-due"].includes(agreement.status) && agreement.review) fail("unexpected-review", "进行中的约定不能提前写入回顾结果。");
@@ -104,6 +114,7 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
     if (item.reversedAt) {
       const reversedAt = instant(item.reversedAt, "invalid-reversed-at", "双方记录撤回时间无效。");
       if (reversedAt < recordedAt) fail("reversal-before-record", "撤回时间不能早于记录时间。");
+      if (reversedAt - recordedAt > REVERSAL_WINDOW_MS) fail("reversal-window-expired", "双方记录只能在10分钟内撤回。");
     }
   });
   const liveRecordKeys = new Set();
@@ -156,7 +167,7 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
       if (original.type !== "wish-spend") fail("invalid-wish-refund-target", "心愿退款引用了错误的原流水。");
       if (item.amount !== Math.abs(original.amount)) fail("wish-refund-mismatch", "心愿退款金额与原支出不一致。");
       if (item.childId !== original.childId || item.wishId !== original.wishId) fail("wish-refund-mismatch", "心愿退款与原支出不属于同一个家庭心愿。");
-      if (new Date(item.createdAt) < new Date(original.createdAt)) fail("refund-before-spend", "心愿退款不能早于原支出。");
+      if (new Date(item.createdAt) <= new Date(original.createdAt)) fail("refund-before-spend", "心愿退款必须晚于原支出。");
     }
   }
 
@@ -175,9 +186,10 @@ export function assertStateInvariants(state, { today = "", allowRuntimeReviewRef
       const cancelledAt = new Date(wish.cancelledAt);
       if (transactions.some((item) => item.wishId === wish.id && new Date(item.createdAt) > cancelledAt)) fail("wish-transaction-after-cancel", "心愿取消后不能继续产生象果流水。");
     }
-    if (["active", "scheduled"].includes(wish.status) && (wish.completedAt || wish.cancelledAt)) fail("wish-status-time-mismatch", "进行中的心愿不能带有完成或取消时间。");
+    if (wish.status === "active" && (wish.scheduledDate || wish.completedAt || wish.cancelledAt)) fail("wish-status-time-mismatch", "累积中的心愿不能带有安排、完成或取消时间。");
+    if (wish.status === "scheduled" && (wish.completedAt || wish.cancelledAt)) fail("wish-status-time-mismatch", "已安排心愿不能带有完成或取消时间。");
     if (wish.status === "completed" && wish.cancelledAt) fail("wish-status-time-mismatch", "已实现心愿不能带有取消时间。");
-    if (wish.status === "cancelled" && wish.completedAt) fail("wish-status-time-mismatch", "已取消心愿不能带有完成时间。");
+    if (wish.status === "cancelled" && (wish.completedAt || wish.scheduledDate)) fail("wish-status-time-mismatch", "已取消心愿不能带有完成或安排日期。");
   }
 
   validateHistoricalBalances(children, transactions);
@@ -234,10 +246,8 @@ function transactionMapTarget(transactions, id) { return transactions.find((item
 function validateHistoricalBalances(children, transactions) {
   for (const child of children) {
     let running = 0;
-    const ordered = transactions.map((item, index) => ({ item, index }))
-      .filter(({ item }) => item.childId === child.id)
-      .sort((left, right) => left.item.createdAt.localeCompare(right.item.createdAt) || left.index - right.index);
-    for (const { item } of ordered) {
+    const ordered = transactions.filter((item) => item.childId === child.id).sort(compareTransactions);
+    for (const item of ordered) {
       running += item.amount;
       if (running < 0) fail("negative-fruit-balance", "任意历史时点的可用象果都不能小于0。");
     }
@@ -249,11 +259,11 @@ function validatePetPeaks(children, transactions, peaks) {
     const peak = peaks[child.id] ?? 0;
     if (!Number.isInteger(peak) || peak < 0) fail("invalid-pet-peak", "步步成长峰值必须是非负整数。");
     let running = 0; let historicalMax = 0;
-    for (const item of transactions.filter((tx) => tx.childId === child.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+    for (const item of transactions.filter((tx) => tx.childId === child.id).sort(compareTransactions)) {
       if (["child-step", "parent-step", "companion", "record-reversal"].includes(item.type)) running += item.amount;
       historicalMax = Math.max(historicalMax, running);
     }
-    if (peak < historicalMax) fail("pet-peak-too-low", "步步成长峰值低于历史已达到的象果数量。");
+    if (peak !== historicalMax) fail("pet-peak-mismatch", "步步成长峰值必须与象果历史一致。");
   }
 }
 
@@ -269,8 +279,17 @@ function validateCompanionReferences(item, records, recordMap, requireLive = fal
     fail("invalid-companion-records", "同行象果必须引用同一周期内孩子和家长的两条有效记录。");
   }
   const latestRecordAt = Math.max(...related.map((recordItem) => new Date(recordItem.recordedAt).getTime()));
-  if (new Date(item.createdAt).getTime() < latestRecordAt) fail("companion-before-records", "同行象果不能早于双方记录。");
+  if (new Date(item.createdAt).getTime() !== latestRecordAt) fail("companion-time-mismatch", "同行象果必须在第二条双方记录产生时同步创建。");
 }
+
+function compareTransactions(left, right) {
+  const time = left.createdAt.localeCompare(right.createdAt);
+  if (time) return time;
+  const order = { "child-step": 1, "parent-step": 1, companion: 2, "wish-spend": 3, "record-reversal": 4, "wish-refund": 5 };
+  return (order[left.type] || 9) - (order[right.type] || 9) || String(left.id).localeCompare(String(right.id));
+}
+
+function instantForShanghaiDate(value) { return new Date(`${value}T04:00:00.000Z`); }
 
 function legacyCompanionPeriod(item) {
   const prefix = `fruit:companion:${item.agreementId}:`;

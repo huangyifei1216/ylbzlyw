@@ -1,4 +1,4 @@
-export const APP_VERSION = "5.1.3";
+export const APP_VERSION = "5.1.4";
 
 export const STAGES = [
   stage("s1", "0—1.5岁", "安全依恋建立期", "看护月龄卡", "daily", "今天怎么陪", "一起度过啦"),

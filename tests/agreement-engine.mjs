@@ -32,6 +32,8 @@ assert.equal(isEntitledForStage({ ...stage4, status: "revoked" }, "s4"), false);
 assert.equal(isEntitledForStage({ ...stage4, status: "expired" }, "s4"), false);
 assert.throws(() => createAgreement([], draft, { currentStageId: "s5", entitlement: stage4, now }), error("stage-not-entitled"));
 assert.throws(() => createAgreement([], draft, { currentStageId: "s4", entitlement: all, isAdult: true, now }), error("adult-new-agreement"));
+assert.throws(() => createAgreement([], { ...draft, childAction: "有自伤冲动时忍住不说" }, { currentStageId: "s4", entitlement: all, now }), error("unsafe-agreement"));
+assert.throws(() => createAgreement([], { ...draft, parentAction: "根据情况调整药量" }, { currentStageId: "s4", entitlement: all, now }), error("unsafe-agreement"));
 
 // Recording and finishing an already-started old-stage agreement never re-checks the new stage or adulthood.
 assert.equal(periodKeyFor(created.agreement, "2026-08-26"), "2026-08-26");

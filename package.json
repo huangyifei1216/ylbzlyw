@@ -9,7 +9,7 @@
     "test:e2e": "playwright test",
     "build:production": "node scripts/build-production.mjs",
     "verify": "npm test && npm run build:production && npm run test:e2e",
-    "serve": "python3 -m http.server 4173"
+    "serve": "node scripts/serve.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0"

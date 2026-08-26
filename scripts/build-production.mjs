@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,12 +19,21 @@ await mkdir(path.join(output, "assets"), { recursive: true });
 for (const file of runtimeFiles) await cp(path.join(root, file), path.join(output, file));
 for (const file of assetFiles) await cp(path.join(root, "assets", file), path.join(output, "assets", file));
 
+const appPath = path.join(output, "app.js");
+let productionApp = await readFile(appPath, "utf8");
+productionApp = productionApp
+  .replace('const demoAccess = APP_CONFIG.environment === "development" ? globalThis.__YLB_DEMO_ACCESS__ || null : null;', "const demoAccess = null;")
+  .replace(/\n  if \(action === "demo".*?return seedDemo\(\);/, "")
+  .replace(/\nasync function seedDemo\(\) \{.*?\nasync function activateFromMagicLink/s, "\nasync function activateFromMagicLink");
+await writeFile(appPath, productionApp);
+
 const actual = (await listFiles(output)).sort();
 const expected = [...runtimeFiles, ...assetFiles.map((file) => `assets/${file}`)].sort();
 if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Production manifest mismatch:\n${actual.join("\n")}`);
 for (const file of actual.filter((name) => /\.(?:js|mjs|html)$/.test(name))) {
   const text = await readFile(path.join(output, file), "utf8");
   if (/BB-ALL-0001|BB-S[1-6]-0001/.test(text)) throw new Error(`Demo activation code leaked into ${file}`);
+  if (/demo-access\.mjs|__YLB_DEMO_ACCESS__|seedDemo/.test(text)) throw new Error(`Development branch leaked into ${file}`);
 }
 console.log(`Production build ready: ${actual.length} allowlisted files; demo, tests, docs and design sources excluded.`);
 

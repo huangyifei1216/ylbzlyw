@@ -134,6 +134,24 @@ injectedWish.data.wishes[0].icon = "<style>/*";
 injectedWish.data.wishes[0].title = "*/body{display:none}";
 assert.throws(() => parseFamilyBackup(injectedWish), error("invalid-family-state"));
 
+for (const field of ["problem", "childAction", "parentAction"]) {
+  const unsafeAgreement = structuredClone(envelope);
+  unsafeAgreement.data.agreements[0][field] = field === "problem" ? "孩子说不想活" : field === "childAction" ? "有自伤冲动时忍住" : "自行调整药量";
+  assert.throws(() => parseFamilyBackup(unsafeAgreement), error("invalid-family-state"), `unsafe ${field} must not enter through backup`);
+}
+
+const futureChild = structuredClone(envelope);
+futureChild.data.children[0].birthDate = "2030-01-01";
+assert.throws(() => parseFamilyBackup(futureChild), error("invalid-family-state"));
+
+const mismatchedStage = structuredClone(envelope);
+mismatchedStage.data.agreements[0].stageId = "s4";
+assert.throws(() => parseFamilyBackup(mismatchedStage), error("invalid-family-state"));
+
+const inflatedPet = structuredClone(envelope);
+inflatedPet.data.petPeaks[childA.id] = 60;
+assert.throws(() => parseFamilyBackup(inflatedPet), error("invalid-family-state"));
+
 function error(code) {
   return (caught) => caught instanceof BackupValidationError && caught.code === code;
 }

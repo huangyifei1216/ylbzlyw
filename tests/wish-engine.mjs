@@ -32,6 +32,7 @@ assert.throws(() => abandonWish(completed.wishes, scheduled.transactions, "wish-
 
 const wish2 = createWish([], { id: "wish-c", childId: "child-a", title: "一起做饭", icon: "🍲", cost: 3 }, { createdAt: at(26) });
 const scheduled2 = scheduleWish(wish2.wishes, ledger.transactions, "wish-c", { createdAt: at(26, 1) });
+assert.throws(() => unscheduleWish(scheduled2.wishes, scheduled2.transactions, "wish-c", { unscheduledAt: at(26, 1) }), error("refund-before-spend"));
 const unscheduled = unscheduleWish(scheduled2.wishes, scheduled2.transactions, "wish-c", { unscheduledAt: at(26, 2) });
 assert.equal(unscheduled.wish.status, "active");
 assert.equal(unscheduled.wish.title, "一起做饭");

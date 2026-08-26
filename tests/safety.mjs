@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { SAFETY_BOUNDARY, checkProblemSafety, getSafetyBoundary, isProblemBlocked } from "../safety.mjs";
+import { SAFETY_BOUNDARY, checkAgreementSafety, checkProblemSafety, getSafetyBoundary, isProblemBlocked } from "../safety.mjs";
 
 const blockedCases = [
   ["他说自己不想活了", "psychological-crisis"],
@@ -29,6 +29,9 @@ for (const text of ["写作业磨蹭", "早上出门慢", "手机问题容易吵
 }
 
 assert.deepEqual(checkProblemSafety(""), { blocked: false, category: "", categoryLabel: "", matches: [] });
+assert.equal(checkAgreementSafety({ problem: "写作业磨蹭", childAction: "出现自伤想法时自己忍住", parentAction: "只提醒一次" }).field, "childAction");
+assert.equal(checkAgreementSafety({ problem: "写作业磨蹭", childAction: "先做一道题", parentAction: "自行决定药量" }).field, "parentAction");
+assert.equal(checkAgreementSafety({ problem: "写作业磨蹭", childAction: "先做一道题", parentAction: "只提醒一次" }).blocked, false);
 const boundary = getSafetyBoundary();
 assert.deepEqual(boundary, SAFETY_BOUNDARY);
 boundary.actions.push("被外部修改");

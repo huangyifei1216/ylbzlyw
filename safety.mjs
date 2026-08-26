@@ -53,6 +53,16 @@ export function isProblemBlocked(value) {
   return checkProblemSafety(value).blocked;
 }
 
+/** Check every free-text field that can become a family agreement. */
+export function checkAgreementSafety(value) {
+  const source = value && typeof value === "object" ? value : {};
+  for (const field of ["problem", "childAction", "parentAction"]) {
+    const result = checkProblemSafety(source[field]);
+    if (result.blocked) return { ...result, field };
+  }
+  return { blocked: false, field: "", category: "", categoryLabel: "", matches: [] };
+}
+
 export function getSafetyBoundary() {
   return { ...SAFETY_BOUNDARY, actions: [...SAFETY_BOUNDARY.actions] };
 }

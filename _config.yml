@@ -12,9 +12,10 @@ exclude:
   - playwright.config.mjs
   - GPT-PRO-HANDOFF.md
   - GPT-PRO-REVIEW-INDEX.md
-  - GPT-PRO-RETEST-V5.1.3.md
+  - GPT-PRO-RETEST-V5.1.4.md
   - PRD.md
   - PRD-V4-FINAL.md
   - README.md
   - project-control.md
   - demo-access.mjs
+  - dev.html

@@ -93,6 +93,7 @@ test("两个孩子的约定、象果与步步成长互不串账", async ({ page 
   await page.getByRole("button", { name: /接下来/ }).click();
   await completeDraft(page);
   await page.getByRole("button", { name: /这次聊过了/ }).click();
+  await expect(page.locator(".action-check.is-child .recorded-state")).toContainText("已记下");
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
   const feifei = state.children.find((item) => item.nickname === "菲菲");
   const xiaoyan = state.children.find((item) => item.nickname === "小言");
@@ -206,6 +207,38 @@ test("敏感自定义问题进入边界页，不能创建约定", async ({ page 
   await page.screenshot({ path: "artifacts/screenshots/safety-boundary-390x844.png", fullPage: true });
 });
 
+for (const [role, unsafeText] of [["childAction", "有自伤冲动时自己忍住"], ["parentAction", "我根据情况自行调整药量"]]) {
+  test(`敏感${role === "childAction" ? "孩子" : "家长"}行动不能进入周期或产生象果`, async ({ page }) => {
+    await page.goto("/");
+    await page.getByLabel("开通码").fill("BB-ALL-0001");
+    await page.getByRole("button", { name: /开通一两步/ }).click();
+    await page.getByRole("button", { name: /建立孩子档案/ }).click();
+    await page.locator("#child-form").evaluate((form) => { form.elements.nickname.value = "小宇"; form.elements.birthDate.value = "2017-08-01"; });
+    await page.getByRole("button", { name: /接下来/ }).click();
+    await page.locator(".problem-options button").first().click();
+    await page.locator(`textarea[name="${role}"]`).fill(unsafeText);
+    await page.getByRole("button", { name: /选周期和家庭心愿/ }).click();
+    await expect(page.getByRole("heading", { name: "这个情况不适合做成家庭约定" })).toBeVisible();
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
+    expect(saved.agreements).toHaveLength(0);
+    expect(saved.fruitTransactions).toHaveLength(0);
+  });
+}
+
+test("放下旧心愿后立即选择并建立新心愿", async ({ page }) => {
+  await activateAndCreate(page);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "换一个家庭心愿" }).click();
+  await expect(page.getByRole("heading", { name: "换一个全家都期待的心愿" })).toBeVisible();
+  await page.getByLabel(/一起去公园慢慢玩/).check();
+  await page.getByRole("button", { name: "确认新的家庭心愿" }).click();
+  await expect(page.getByRole("heading", { name: "换一个全家都期待的心愿" })).toBeHidden();
+  await expect(page.getByText("一起去公园慢慢玩", { exact: true })).toBeVisible();
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
+  expect(state.wishes.filter((item) => item.status === "cancelled")).toHaveLength(1);
+  expect(state.wishes.filter((item) => item.status === "active" && item.title === "一起去公园慢慢玩")).toHaveLength(1);
+});
+
 test("备份导入先预览，确认后不改变当前权益", async ({ page }) => {
   await activateAndCreate(page);
   await page.getByRole("button", { name: "我的" }).click();
@@ -257,6 +290,22 @@ test("五个成长阶段使用独立步步姿势并生成审阅截图", async ({
   for (let index = 0; index < milestones.length; index += 1) {
     await page.evaluate((peak) => {
       const state = JSON.parse(localStorage.getItem("ylb.v5.state"));
+      state.agreements = state.agreements.filter((item) => item.status === "active");
+      state.records = {};
+      state.fruitTransactions = [];
+      for (let offset = 0; offset < peak / 3; offset += 1) {
+        const id = `growth-history-${offset}`;
+        const agreement = { ...state.agreements[0], id, wishId: "", status: "reviewed", startDate: "2026-07-01", endDate: "2026-07-03", duration: 3, createdAt: "2026-07-01T00:00:00.000Z", review: { outcome: "continue", outcomeLabel: "有一点变化，再试一轮", outcomeIcon: "↻", reviewedAt: "2026-07-04T04:00:00.000Z" } };
+        state.agreements.push(agreement);
+        const childRecordId = `${id}-child`; const parentRecordId = `${id}-parent`; const createdAt = "2026-07-01T04:00:00.000Z";
+        state.records[childRecordId] = { id: childRecordId, childId: agreement.childId, agreementId: id, role: "child", periodKey: "2026-07-01", localDate: "2026-07-01", recordedAt: createdAt, reversedAt: "" };
+        state.records[parentRecordId] = { id: parentRecordId, childId: agreement.childId, agreementId: id, role: "parent", periodKey: "2026-07-01", localDate: "2026-07-01", recordedAt: createdAt, reversedAt: "" };
+        state.fruitTransactions.push(
+          { id: `${id}-child-fruit`, childId: agreement.childId, agreementId: id, recordId: childRecordId, wishId: "", type: "child-step", amount: 1, createdAt, reversedTransactionId: "", periodKey: "2026-07-01", relatedRecordIds: [childRecordId] },
+          { id: `${id}-parent-fruit`, childId: agreement.childId, agreementId: id, recordId: parentRecordId, wishId: "", type: "parent-step", amount: 1, createdAt, reversedTransactionId: "", periodKey: "2026-07-01", relatedRecordIds: [parentRecordId] },
+          { id: `${id}-companion`, childId: agreement.childId, agreementId: id, recordId: parentRecordId, wishId: "", type: "companion", amount: 1, createdAt, reversedTransactionId: "", periodKey: "2026-07-01", relatedRecordIds: [childRecordId, parentRecordId] },
+        );
+      }
       state.petPeaks[state.currentChildId] = peak;
       localStorage.setItem("ylb.v5.state", JSON.stringify(state));
     }, milestones[index]);
@@ -330,6 +379,7 @@ test("步步图片加载失败时文字与双方行动仍可直接使用", async
 test("清空后重新开通，可以在建档前导入并恢复家庭数据", async ({ page }) => {
   await activateAndCreate(page);
   await page.getByRole("button", { name: /记录菲菲这一步/ }).click();
+  await expect(page.locator(".action-check.is-child .recorded-state")).toContainText("已记下");
   const before = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
   const envelope = { product: "一两步", format: "ylbzlyw-family-backup", backupVersion: 1, schemaVersion: 2, appVersion: 5.1, exportedAt: new Date().toISOString(), data: { children: before.children, currentChildId: before.currentChildId, agreements: before.agreements, records: before.records, fruitTransactions: before.fruitTransactions, wishes: before.wishes, petPeaks: before.petPeaks } };
   await page.evaluate(() => localStorage.clear());
@@ -372,10 +422,12 @@ test("心愿安排不等于实现，只有真实实现后才进入家庭回忆",
   await page.goto("/#/pet");
   await page.getByRole("button", { name: "一起安排" }).click();
   await page.getByRole("button", { name: "确认安排" }).click();
+  await expect(page.getByRole("button", { name: "这个心愿实现啦" })).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")).wishes[0].status)).toBe("scheduled");
   await page.screenshot({ path: "artifacts/screenshots/wish-scheduled-not-completed-390x844.png", fullPage: true });
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "取消这次安排" }).click();
+  await expect(page.getByRole("button", { name: "一起安排" })).toBeVisible();
   const unscheduled = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
   expect(unscheduled.wishes[0].status).toBe("active");
   expect(unscheduled.wishes[0].title).toBe("一起选一部全家电影");
@@ -384,7 +436,9 @@ test("心愿安排不等于实现，只有真实实现后才进入家庭回忆",
   await page.screenshot({ path: "artifacts/screenshots/wish-unscheduled-retained-390x844.png", fullPage: true });
   await page.getByRole("button", { name: "一起安排" }).click();
   await page.getByRole("button", { name: "确认安排" }).click();
+  await expect(page.getByRole("button", { name: "这个心愿实现啦" })).toBeVisible();
   await page.getByRole("button", { name: "这个心愿实现啦" }).click();
+  await expect(page.getByText("这个心愿已收进家庭回忆")).toBeVisible();
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")).wishes[0].status)).toBe("completed");
   await page.locator('.bottom-nav button[data-view="pet"]').click();
   await expect(page.getByText("一起选一部全家电影", { exact: true })).toBeVisible();
@@ -433,7 +487,7 @@ test("恶意心愿图标备份被拒绝且不会生成样式或脚本节点", as
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
   state.wishes[0].icon = "<style>/*";
   state.wishes[0].title = "*/body{display:none}";
-  const envelope = { product: "一两步", format: "ylbzlyw-family-backup", backupVersion: 1, schemaVersion: 2, appVersion: "5.1.3", exportedAt: new Date().toISOString(), data: { children: state.children, currentChildId: state.currentChildId, agreements: state.agreements, records: state.records, fruitTransactions: state.fruitTransactions, wishes: state.wishes, petPeaks: state.petPeaks } };
+  const envelope = { product: "一两步", format: "ylbzlyw-family-backup", backupVersion: 1, schemaVersion: 2, appVersion: "5.1.4", exportedAt: new Date().toISOString(), data: { children: state.children, currentChildId: state.currentChildId, agreements: state.agreements, records: state.records, fruitTransactions: state.fruitTransactions, wishes: state.wishes, petPeaks: state.petPeaks } };
   await page.locator("#backup-input").setInputFiles({ name: "injected-family.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(envelope)) });
   await expect(page.getByRole("heading", { name: "无法导入这份备份" })).toBeVisible();
   await expect(page.locator("#app style, #app script, #app textarea")).toHaveCount(0);
@@ -470,16 +524,28 @@ test("成功清空后刷新仍保持为空家庭", async ({ page }) => {
   expect(await page.evaluate(() => localStorage.getItem("ylb.v5.state"))).toBeNull();
 });
 
-test("同一浏览器两个页面实时同步且不会静默覆盖", async ({ page }) => {
+test("同一浏览器两个页面真正同时提交时完整合并或明确冲突", async ({ page }) => {
   await activateAndCreate(page);
   const second = await page.context().newPage();
   await second.addInitScript(() => { window.__YLB_CONFIG__ = { environment: "development", handbookUrl: "" }; });
   await second.goto("/#/home");
   await expect(second.locator(".today-heading h1")).toBeVisible();
 
-  await page.getByRole("button", { name: /记录菲菲这一步/ }).click();
-  await expect(second.locator(".action-check.is-child .recorded-state")).toContainText("已记下");
-  await second.getByRole("button", { name: /记录家长这一步/ }).click();
+  await Promise.all([
+    page.getByRole("button", { name: /记录菲菲这一步/ }).click(),
+    second.getByRole("button", { name: /记录家长这一步/ }).click(),
+  ]);
+  await expect.poll(async () => {
+    const count = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("ylb.v5.state")).records).length);
+    const messages = `${await page.locator("#toast").textContent()} ${await second.locator("#toast").textContent()}`;
+    return count === 2 ? "merged" : messages.includes("已保留另一页面的最新更新") ? "conflict" : "pending";
+  }).toMatch(/merged|conflict/);
+  const afterRace = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("ylb.v5.state")).records).length);
+  if (afterRace === 1) {
+    const childMissing = await page.getByRole("button", { name: /记录菲菲这一步/ }).count();
+    if (childMissing) await page.getByRole("button", { name: /记录菲菲这一步/ }).click();
+    else await page.getByRole("button", { name: /记录家长这一步/ }).click();
+  }
   await expect(page.getByText(/累计 3 颗/)).toBeVisible();
   const finalState = await page.evaluate(() => JSON.parse(localStorage.getItem("ylb.v5.state")));
   expect(Object.keys(finalState.records)).toHaveLength(2);

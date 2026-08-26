@@ -1,3 +1,5 @@
+import { checkAgreementSafety } from "./safety.mjs";
+
 export const RECORD_MODES = Object.freeze(["daily", "once-per-cycle"]);
 export const IN_PROGRESS_STATUSES = Object.freeze(["active", "review-due"]);
 export const AGREEMENT_STATUSES = Object.freeze([...IN_PROGRESS_STATUSES, "reviewed", "paused", "archived"]);
@@ -31,6 +33,10 @@ export function periodKeyFor(agreement, localDate) {
 export function createAgreement(agreements, draft, context = {}) {
   const current = asArray(agreements);
   const input = draft && typeof draft === "object" ? draft : {};
+  const safety = checkAgreementSafety(input);
+  if (safety.blocked) {
+    throw new DomainRuleError("unsafe-agreement", "你填写的内容里包含不适合做成家庭约定的情况。一两步不能处理医疗诊断、心理危机或紧急安全问题。");
+  }
   const childId = requiredText(input.childId, "childId", "缺少孩子信息。");
   if (current.some((item) => item.childId === childId && IN_PROGRESS_STATUSES.includes(item.status))) {
     throw new DomainRuleError("agreement-in-progress", "请先回顾或归档当前约定，再开始新一轮。");

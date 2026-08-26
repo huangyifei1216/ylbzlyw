@@ -124,6 +124,9 @@ function refundLatestSpend(wish, transactions, at, transactionId) {
     && !items.some((candidate) => candidate.type === "wish-refund" && candidate.reversedTransactionId === item.id));
   if (!spend) throw new DomainRuleError("wish-spend-not-found", "没有找到这个心愿的有效象果支出，无法退款。");
   const timestamp = isoInstant(at);
+  if (new Date(timestamp).getTime() <= new Date(spend.createdAt).getTime()) {
+    throw new DomainRuleError("refund-before-spend", "取消安排的时间必须晚于象果支出时间。");
+  }
   const transaction = {
     id: transactionId || `fruit:wish-refund:${spend.id}`,
     childId: wish.childId,

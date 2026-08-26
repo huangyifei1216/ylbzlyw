@@ -1,32 +1,38 @@
-# GPT Pro 完整阅读索引｜V5.1.3
+# GPT Pro 完整阅读索引｜V5.1.4
 
 仓库：`huangyifei1216/ylbzlyw`，分支：`dev`。请按顺序读取 Raw 文件；行数与字节数用于确认没有只抓到 GitHub 外壳或截断正文。
 
 | # | 文件 | 行 | 字节 | 用途 |
 |---:|---|---:|---:|---|
-| 1 | [GPT-PRO-HANDOFF.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/GPT-PRO-HANDOFF.md) | 45 | 3,157 | 产品边界、整改摘要与攻击面 |
-| 2 | [PRD.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/PRD.md) | 198 | 11,937 | V5.1.3 产品规则与 21 条验收条件 |
-| 3 | [app.js](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/app.js) | 320 | 52,314 | 页面、事务提交、多页同步与输出转义 |
+| 1 | [GPT-PRO-HANDOFF.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/GPT-PRO-HANDOFF.md) | 47 | 3,759 | 产品边界、V5.1.4 整改摘要与攻击面 |
+| 2 | [PRD.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/PRD.md) | 205 | 13,721 | 产品规则与 25 条验收条件 |
+| 3 | [app.js](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/app.js) | 323 | 54,830 | 页面、异步事务、多页同步和输出转义 |
 | 4 | [agreements.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/agreements.mjs) | 87 | 5,824 | 六阶段模板、心愿与步步配置 |
-| 5 | [data-contract.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/data-contract.mjs) | 246 | 18,090 | V2、迁移、CAS 写入与清空事务 |
-| 6 | [state-invariants.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/state-invariants.mjs) | 330 | 24,617 | 引用、生命周期、时间线与历史账本 |
-| 7 | [agreement-engine.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/agreement-engine.mjs) | 196 | 8,675 | 约定领域规则与回顾截止 |
-| 8 | [fruit-ledger.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/fruit-ledger.mjs) | 223 | 11,162 | 双方记录、同行象果、撤回与逐笔余额 |
-| 9 | [wish-engine.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/wish-engine.mjs) | 167 | 8,715 | 心愿生命周期与退款 |
-| 10 | [wish-icons.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/wish-icons.mjs) | 11 | 366 | 固定心愿图标白名单 |
-| 11 | [backup.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/backup.mjs) | 212 | 10,266 | 严格家庭备份边界 |
-| 12 | [config.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/config.mjs) | 16 | 520 | production fail-closed 配置 |
-| 13 | [tests/data-contract.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/data-contract.mjs) | 100 | 7,643 | 存储写入、清空、冲突与迁移测试 |
-| 14 | [tests/state-invariants.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/state-invariants.mjs) | 172 | 12,875 | 时间线、注入、孤立撤回与历史余额对抗测试 |
-| 15 | [tests/backup.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/backup.mjs) | 141 | 10,031 | 严格导入及恶意图标拒绝 |
-| 16 | [tests/e2e/core-flow.spec.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/e2e/core-flow.spec.mjs) | 488 | 32,166 | 24 条移动端真实流程 |
-| 17 | [scripts/build-production.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/scripts/build-production.mjs) | 39 | 2,184 | 26 文件生产白名单构建 |
-| 18 | [README.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/README.md) | 38 | 1,944 | 运行、验证和能力边界 |
-| 19 | [project-control.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/project-control.md) | 34 | 1,912 | 当前发布闸门与外部依赖 |
-| 20 | [GPT-PRO-RETEST-V5.1.3.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/GPT-PRO-RETEST-V5.1.3.md) | 50 | 2,628 | 上一轮 NO-GO 对应整改 |
+| 5 | [data-contract.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/data-contract.mjs) | 281 | 19,762 | V2、迁移、Web Locks CAS 与未知提交状态 |
+| 6 | [state-invariants.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/state-invariants.mjs) | 349 | 26,198 | 安全、年龄、生命周期、时间线与历史账本 |
+| 7 | [agreement-engine.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/agreement-engine.mjs) | 202 | 8,996 | 约定领域规则、三字段安全与回顾截止 |
+| 8 | [fruit-ledger.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/fruit-ledger.mjs) | 229 | 11,404 | 双方记录、同行象果、撤回与确定性账本 |
+| 9 | [wish-engine.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/wish-engine.mjs) | 170 | 8,909 | 心愿生命周期与严格退款时间 |
+| 10 | [safety.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/safety.mjs) | 71 | 2,779 | 问题与双方动作的统一安全边界 |
+| 11 | [wish-icons.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/wish-icons.mjs) | 11 | 366 | 固定心愿图标白名单 |
+| 12 | [backup.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/backup.mjs) | 212 | 10,266 | 严格家庭备份边界 |
+| 13 | [config.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/config.mjs) | 16 | 520 | production fail-closed 配置 |
+| 14 | [tests/data-contract.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/data-contract.mjs) | 135 | 10,109 | 真并发、冲突和未知提交状态测试 |
+| 15 | [tests/state-invariants.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/state-invariants.mjs) | 213 | 15,623 | 时间线、年龄、峰值和账本对抗测试 |
+| 16 | [tests/backup.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/backup.mjs) | 159 | 11,013 | 严格导入与危险三字段拒绝 |
+| 17 | [tests/safety.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/safety.mjs) | 42 | 2,251 | 三字段安全规则样本 |
+| 18 | [tests/e2e/core-flow.spec.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/tests/e2e/core-flow.spec.mjs) | 554 | 37,762 | 27 条移动端真实流程与 Promise.all 双页提交 |
+| 19 | [scripts/build-production.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/scripts/build-production.mjs) | 48 | 2,841 | 26 文件生产白名单与开发分支物理移除 |
+| 20 | [scripts/serve.mjs](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/scripts/serve.mjs) | 25 | 1,498 | 稳定本地测试服务器 |
+| 21 | [.github/workflows/pages.yml](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/.github/workflows/pages.yml) | 43 | 985 | 只部署 dist 的同提交 Pages 流程 |
+| 22 | [.github/workflows/verify.yml](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/.github/workflows/verify.yml) | 49 | 1,063 | Node、构建和移动端 CI 闸门 |
+| 23 | [package.json](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/package.json) | 17 | 696 | 验证与构建命令合同 |
+| 24 | [README.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/README.md) | 38 | 2,105 | 运行、验证和能力边界 |
+| 25 | [project-control.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/project-control.md) | 37 | 2,229 | 当前发布闸门与外部依赖 |
+| 26 | [GPT-PRO-RETEST-V5.1.4.md](https://raw.githubusercontent.com/huangyifei1216/ylbzlyw/dev/GPT-PRO-RETEST-V5.1.4.md) | 47 | 2,624 | 上轮 NO-GO 的逐项对抗复验任务 |
 
 ## 复审要求
 
-先核对 20 个文件的行数与字节数，再给结论。不要把 `GPT-PRO-RETEST-V5.1.3.md` 当作证据本身；以实现、测试和生产构建为准。
+先核对 26 个文件的行数与字节数，再给结论。不要把 `GPT-PRO-RETEST-V5.1.4.md` 当作证据本身；以实现、对抗样本、测试输出和生产构建为准。
 
-重点验证：持久化 HTML/CSS 注入、清空失败/成功后的 UI 与刷新状态、建立心愿和约定的原子性、两标签页更新、review/record/transaction/wish 时间线、历史先负后正余额、孤立 companion reversal、production 白名单，以及 375×667 首屏。
+优先攻击：真正同时写入、孩子/家长动作绕过安全边界、未知提交状态、晚撤回、延迟同行、同毫秒退款、历史先负后正、未来生日、历史阶段错配、伪造 `petPeaks`、active 心愿陈旧日期、换心愿断路、production 开发分支残留，以及 375×667 首屏。

@@ -9,9 +9,8 @@ export function walletFor(transactions, childId) {
   const items = asArray(transactions).filter((item) => item.childId === childId);
   validateTransactions(items);
   let available = 0;
-  const ordered = items.map((item, index) => ({ item, index }))
-    .sort((left, right) => left.item.createdAt.localeCompare(right.item.createdAt) || left.index - right.index);
-  for (const { item } of ordered) {
+  const ordered = items.sort(compareTransactions);
+  for (const item of ordered) {
     available += item.amount;
     if (available < 0) throw new DomainRuleError("negative-fruit-balance", "象果账目异常，本次操作已停止，原记录没有改变。");
   }
@@ -208,6 +207,13 @@ function normalizeTransaction(value) {
     throw new DomainRuleError("invalid-transaction-sign", "象果流水金额方向无效。");
   }
   return { ...value, createdAt: isoInstant(value.createdAt) };
+}
+
+function compareTransactions(left, right) {
+  const time = left.createdAt.localeCompare(right.createdAt);
+  if (time) return time;
+  const order = { "child-step": 1, "parent-step": 1, companion: 2, "wish-spend": 3, "record-reversal": 4, "wish-refund": 5 };
+  return (order[left.type] || 9) - (order[right.type] || 9) || String(left.id).localeCompare(String(right.id));
 }
 
 function cloneRecords(value) {
