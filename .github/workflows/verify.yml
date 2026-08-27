@@ -1,16 +1,22 @@
-name: Verify V5.1.4
+name: Verify and deploy V5.1.4
 
 on:
   push:
+    branches: [dev]
   pull_request:
 
-permissions:
-  contents: read
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' && 'dev' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Check out source
         uses: actions/checkout@v5
@@ -36,6 +42,12 @@ jobs:
       - name: Run mobile browser tests
         run: npm run test:e2e
 
+      - name: Upload verified production artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          name: verified-production-dist
+          path: dist
+
       - name: Upload Playwright evidence on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -47,3 +59,23 @@ jobs:
             test-results/
             playwright-report/
             artifacts/screenshots/
+
+  deploy:
+    needs: verify
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/dev' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Deploy verified production artifact
+        id: deployment
+        uses: actions/deploy-pages@v4
+        with:
+          artifact_name: verified-production-dist
