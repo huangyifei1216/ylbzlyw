@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { AGREEMENT_PRESETS, FAMILY_WISHES, PET_STAGES, presetsForStage } from "../agreements.mjs";
 import { APP_VERSION, STAGES, childLimit, getAgeInfo, hasStageAccess } from "../core.mjs";
 import { validateDemoCode } from "../demo-access.mjs";
@@ -36,4 +36,48 @@ assert.match(devEntry, /\{ environment: "development", handbookUrl: "" \}/);
 assert.match(devEntry, /href="http:\/\/127\.0\.0\.1:4173\/"/);
 assert.match(devEntry, /location\.protocol === "file:"/);
 
-console.log("Smoke checks passed: V5.1.4 access, reviewed templates, real Bubu assets, mutual actions, wishes, backup, and safety routes.");
+const workflowsUrl = new URL("../.github/workflows/", import.meta.url);
+const workflowNames = (await readdir(workflowsUrl)).filter((name) => /\.ya?ml$/.test(name)).sort();
+const workflows = await Promise.all(workflowNames.map(async (name) => [name, await readFile(new URL(name, workflowsUrl), "utf8")]));
+const pagesWorkflows = workflows.filter(([, source]) => /actions\/(?:upload-pages-artifact|deploy-pages)@|\bpages:\s*write\b/.test(source));
+assert.equal(workflowNames.includes("pages.yml"), false, "The independent Pages bypass workflow must stay deleted");
+assert.deepEqual(pagesWorkflows.map(([name]) => name), ["verify.yml"], "Pages must have exactly one workflow entry point");
+
+const verifyWorkflow = workflows.find(([name]) => name === "verify.yml")?.[1];
+assert.ok(verifyWorkflow, "verify.yml must exist");
+const verifyStart = verifyWorkflow.indexOf("\n  verify:");
+const deployStart = verifyWorkflow.indexOf("\n  deploy:");
+assert.ok(verifyStart >= 0 && deployStart > verifyStart, "verify and deploy jobs must exist in that order");
+const verifyJob = verifyWorkflow.slice(verifyStart, deployStart);
+const deployJob = verifyWorkflow.slice(deployStart);
+const orderedVerification = [
+  "run: npm ci",
+  "run: npm test",
+  "run: npm run build:production",
+  "run: npx playwright install --with-deps chromium",
+  "run: npm run test:e2e",
+  "uses: actions/upload-pages-artifact@v3",
+];
+let previousStep = -1;
+for (const step of orderedVerification) {
+  const position = verifyJob.indexOf(step);
+  assert.ok(position > previousStep, `${step} must remain in the required verification order`);
+  previousStep = position;
+}
+assert.equal((verifyWorkflow.match(/run: npm run build:production/g) || []).length, 1, "Production must be built exactly once");
+assert.match(verifyJob, /permissions:\n\s+contents: read/);
+assert.doesNotMatch(verifyJob, /pages: write|id-token: write/);
+assert.match(verifyJob, /uses: actions\/upload-pages-artifact@v3[\s\S]*?name: verified-production-dist[\s\S]*?path: dist/);
+assert.match(deployJob, /needs: verify/);
+assert.match(deployJob, /if: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/dev' \}\}/);
+assert.match(deployJob, /permissions:\n\s+pages: write\n\s+id-token: write/);
+assert.match(deployJob, /uses: actions\/deploy-pages@v4[\s\S]*?artifact_name: verified-production-dist/);
+assert.doesNotMatch(deployJob, /npm (?:ci|run build:production)|actions\/checkout|actions\/setup-node|actions\/upload-pages-artifact/);
+assert.doesNotMatch(verifyWorkflow, /workflow_dispatch/);
+assert.doesNotMatch(verifyWorkflow, /continue-on-error/);
+assert.match(verifyWorkflow, /push:\n\s+branches: \[dev\]/);
+assert.match(verifyWorkflow, /pull_request:/);
+assert.match(verifyWorkflow, /cancel-in-progress: \$\{\{ github\.event_name == 'push' && github\.ref == 'refs\/heads\/dev' \}\}/);
+assert.match(verifyWorkflow, /github\.run_id/);
+
+console.log("Smoke checks passed: V5.1.4 product contracts and the verified-artifact Pages release gate.");
